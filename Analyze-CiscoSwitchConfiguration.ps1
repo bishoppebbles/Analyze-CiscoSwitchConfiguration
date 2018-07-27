@@ -8,24 +8,21 @@
 .NOTES
     Version 1.0
     Sam Pursglove
-    Last modified: 19 JUL 2018
+    Last modified: 27 JUL 2018
 .EXAMPLE
-    .\Analyze-CiscoSwitchConfiguration.ps1 cisco_config.txt
+    Analyze-CiscoSwitchConfiguration.ps1 cisco_config.txt
 
     Analyze the Cisco switch configuration security settings.
 #>
 
-param 
-(
-    [Parameter(Position=0,
-               Mandatory=$true,
-               ValueFromPipeline=$false,
-               HelpMessage='The saved config file of a Cisco switch')]
-    [string]$ConfigFile
+[CmdletBinding()]
+param (
+
+    [Parameter(Position=0, Mandatory=$true, ValueFromPipeline=$false, HelpMessage='The saved config file of a Cisco switch')]
+    [string]
+    $ConfigFile
 )
 
-# read in the config file to memory
-$Config = Get-Content $ConfigFile
 
 function Search-Config {
     Param ($SearchString)
@@ -36,6 +33,9 @@ function Search-ConfigQuietly {
     Param ($SearchString)
     $Config | Select-String $SearchString -Quiet
 }
+
+# read in the config file to memory
+$Config = Get-Content $ConfigFile
 
 $CiscoConfig = @{
     version=                  (Search-Config "^version")[1]
