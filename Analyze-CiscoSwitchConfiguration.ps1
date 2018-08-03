@@ -8,7 +8,7 @@
 .NOTES
     Version 1.0
     Sam Pursglove
-    Last modified: 27 JUL 2018
+    Last modified: 01 AUG 2018
 .EXAMPLE
     Analyze-CiscoSwitchConfiguration.ps1 cisco_config.txt
 
@@ -18,116 +18,145 @@
 [CmdletBinding()]
 param (
 
-    [Parameter(Position=0, Mandatory=$true, ValueFromPipeline=$false, HelpMessage='The saved config file of a Cisco switch')]
+    [Parameter(Position=0, Mandatory=$false, ValueFromPipeline=$false, HelpMessage='The saved config file of a Cisco switch')]
     [string]
-    $ConfigFile
+    [string]$ConfigFile
 )
 
+# searches the config and returns the value(s) of interest if they are found
+function Search-ConfigForValue {
+    
+    Param ([string]$SearchString)
 
-function Search-Config {
-    Param ($SearchString)
-    $Config | Select-String $SearchString | ForEach-Object { $_.Line.Split(' ') }
+    $Config | Where-Object { $_ -match $SearchString } | ForEach-Object { $Matches[1] }
 }
 
+
+# returns true/false if the search term is found in the config
 function Search-ConfigQuietly {
-    Param ($SearchString)
+    Param ([string]$SearchString)
+    
     $Config | Select-String $SearchString -Quiet
 }
 
+   
 # read in the config file to memory
-$Config = Get-Content $ConfigFile
+$Config = Get-Content (Join-Path $PSScriptRoot $ConfigFile)
+
+$Interfaces = @{}
+
+# in development... trying to parse config interface information
+<#
+function Extract-Interfaces {
+
+    $Config | ForEach-Object { 
+                if ($_ -match "^interface ((Ethernet|FastEthernet|GigabitEthernet).+$)") {
+                    
+                    $Interfaces.Add($Matches[1], @())
+
+                    while ($_ -ne '!') {
+
+                    }
+                }
+              }
+}
+
+Extract-Interfaces
+
+$Interfaces.'GigabitEthernet1/0/4'
+#>
+
 
 $CiscoConfig = @{
-    version=                  (Search-Config "^version")[1]
-    hostname=                 (Search-Config "^hostname")[1]
-    enableSecretConfigured=   Search-ConfigQuietly "^enable secret"
-    enablePasswordConfigured= Search-ConfigQuietly "^enable password"
-    servicePasswordEnabled=   Search-ConfigQuietly "^service password-encryption$"
-    servicepasswordDisabled=  Search-ConfigQuietly "^no service password-encryption$"
-    bannerExists=             Search-ConfigQuietly "^banner"
-    aaaNewModelEnabled=       Search-ConfigQuietly "^aaa new-model"
-    aaaNewModelDisabled=      Search-ConfigQuietly "^no aaa new-model"
+    version=                  Search-ConfigForValue "^version (\d{1,2}\.\d{1,2})$"
+    hostname=                 Search-ConfigForValue "^hostname (.+)$"
+    servicePasswordEncrypt=   Search-ConfigQuietly "^service password-encryption$"
+    enableSecret=             Search-ConfigQuietly "^enable secret .+$"
+    enablePassword=           Search-ConfigQuietly "^enable password .+$"
+    userAccountsSecret=       Search-ConfigForValue "^username (\w+) .*secret .+$"
+    userAccountsPassword=     Search-ConfigForValue "^username (\w+) .*password .+$"
+    aaaNewModel=              Search-ConfigQuietly "^aaa new-model$"
+    sshV2=                    Search-ConfigQuietly "^ip ssh version 2$"
+    loginBanner=              Search-ConfigQuietly "^banner (motd|login).+$"
+    
     aaaAuthLocalEnabled=      Search-ConfigQuietly "^aaa authentication login default local"
     aaaAuthTacacsEnabled=     Search-ConfigQuietly "^aaa authentication login default group tacacs+"
-
-#    1. Add a parameter to Search-Config for number of the 'split' result you want
-#    2. put logic in Search-Config to return $false if the result of the string selection is empty
-#       otherwise return $result[1] or [2]... whatever is passed in that parameter
-#        then consider renaming Search-Config to 'Split-ConfigString' or something
-
     tacacsServer=             Search-ConfigQuietly "^tacacs-server host"
-    tacacsServerIp=           (Search-Config "^tacacs-server host")[2]
+    tacacsServerIp=           Search-ConfigForValue "^tacacs-server host"
 }
 
-$minimum_ios_version = 15.0
+$MinimumIosVersion = 15.0
 
-Write-Host "Analyzing the config of switch $($CiscoConfig.hostname)"
+Write-Output "$($CiscoConfig.hostname.ToUpper()) (IOS Version $($CiscoConfig.version))"
 
 # check if a version of older than Cisco IOS 15 is being used
-if ($CiscoConfig.version -lt $minimum_ios_version) {
-    Write-Host "Your Cisco switch with IOS version $($ciscoConfig.version) may be outdated.  Please check for IOS updates."
+if ([single]$CiscoConfig.version -ge $MinimumIosVersion) {
+    Write-Output "`tPASS`t`tCisco IOS version 15 or newer is in use"
+    Write-Verbose "Regularly check for IOS updates and patch the operating system."
 } else {
-    Write-Host "Running Cisco IOS version $($ciscoConfig.version).  Check for IOS updates."
+    Write-Output "`tFAIL`t`tCisco IOS may be outdated"
+    Write-Verbose "IOS may be outdated. Please check for operating system updates and compatibility with version 15 or higher."
 }
 
-if ($CiscoConfig.enableSecretConfigured) {
-    Write-Host "The 'enable secret' privileged account is configured."
-} elseif ($CiscoConfig.enablePasswordConfigured) {
-    Write-Host "The 'enable password' privileged account is used.  Remove this and configure the 'enable secret' privileged account."    
+# check if the 'service password encryption' command has been used
+if ($CiscoConfig.servicePasswordEncrypt) {
+    Write-Output "`tENABLED`t`tService password encryption"
 } else {
-    Write-Host "The enable privileged account is not password protected. Configure the 'enable secret' privileged account."
+    Write-Output "`tDISABLED`tService password encryption"
+    Write-Verbose "Enable the 'service password-encryption' command if other stronger forms of encryption are not available. This encryption is reversible."
 }
 
-if ($CiscoConfig.servicePasswordEnabled) {
-    Write-Host "The 'service password-encryption' command is configured."
-} elseif ($CiscoConfig.servicePasswordDisabled ) {
-    Write-Host "The 'no service password-encryption' command is configured, it should be enabled."
-}
-
-if ($CiscoConfig.bannerExists) {
-    Write-Host "The configuration contains a login warning banner command.  Ensure the message conforms to the required warning banner."
+# check if the enable password is configured with a stronger form of encryption
+if ($CiscoConfig.enableSecret) {
+    Write-Output "`tPASS`t`tEnable secret password configured"
+} elseif ($CiscoConfig.enablePassword) {
+    Write-Output "`tFAIL`t`tEnable secret password configured"
+    Write-Verbose "The privileged enable account is password protected using a weak encryption method. Configure the account using the 'enable secret' command."
 } else {
-    Write-Host "The configuration does not include a login warning banner.  Add the approved login warning banner message."
+    Write-Output "`tFAIL`t`tEnable account is not configured"
+    Write-Verbose "The privileged enable account is not password protected. Configure the account using the 'enable secret' command."
 }
 
-if ($CiscoConfig.aaaNewModelEnabled) {
-    if ($CiscoConfig.aaaAuthLocalEnabled) {
-        Write-Host "Authentication is configured to use the local user database."
-    } elseif ($CiscoConfig.aaaAuthTacacsEnabled) {
-        if ($CiscoConfig.tacacsServer) {
-            # if there is more than one TACACS+ server this only displays the IP of the first one
-            Write-Host "Authentication is configured using TACACS+ with a server IP address of $($CiscoConfig.tacacsServerIp)."
-        } else {
-            Write-Host "Authentication is configured using TACACS+ but no remote server is configured."
-        }
-    } else {
-        Write-Host "Authentication, Authorization, and Accounting (AAA) is enabled but Authentication is not configured."
+# check for local user accounts
+if ($CiscoConfig.userAccountsSecret.Length -gt 0) {
+    Write-Output "`tPASS`t`tLocal accounts with strong password encryption:"
+    $i = 1
+    foreach ($user in $CiscoConfig.userAccountsSecret) {
+        Write-Output "`t`t`t`t`t$i) $($user)"
+        $i += 1
     }
-} elseif ($CiscoConfig.aaaNewModelDisabled) {
-    Write-Host "Authentication, Authorization, and Accounting (AAA) is not enabled.  It should be enabled."
+}
+if ($CiscoConfig.userAccountsPassword.Length -gt 0) {
+    Write-Output "`tFAIL`t`tLocal accounts with weak password encryption:"
+    $i = 1
+    foreach ($user in $CiscoConfig.userAccountsPassword) {
+        Write-Output "`t`t`t`t`t$i) $($user)"
+        $i += 1
+    }
+    Write-Verbose "All local user accunts should be stored with the strongest form of encryption using the the command 'username <user> secret <password>'"
 }
 
 
-# an array of hash tables
-#$CiscoParsingStuff = @(
-#    @{Name=version;SearchString="^version";Value=""}
-#    @{Name=hostname;SearchString="^hostname";Value=""}
-#)
+# check is aaa is enabled
+if ($CiscoConfig.aaaNewModel) {
+    Write-Output "`tENABLED`t`tAuthentication, Authorization, and Accounting (AAA)"
+} else {
+    Write-Output "`tDISABLED`tAuthentication, Authorization, and Accounting (AAA)"
+}
 
-# a hash table of hash tables
-#$CiscoParsingStuff = @{
-#    version=@{SearchString="^version";Value=""}
-#    hostname=@{SearchString="^hostname";Value=""}
-#}
+# check if SSH v2 is enabled
+if ($CiscoConfig.sshV2) {
+    Write-Output "`tENABLED`t`tSSH v2"
+} else {
+    Write-Output "`tDISABLED`tSSH v2"
+    Write-Verbose "SSH v2 should be enabled using the 'ip ssh version 2' command"
+}
 
-
-# look into 'Groups'
-#"version 11.0" -replace "^version ([0-9]*).([0-9]*)",'MajorVersion: $1 MinorVersion: $2'
-
- # $testString = "version 11.0" 
- # if ($testString -match "^version (?<MajorVersion>[0-9]*).(?<MinorVersion>[0-9]*)") { 
-    #found a versions string! lets check it 
- #   if ($Matches.MajorVersion -lt 15){ 
- #       Write-Host "Dude, you gotta update the CISCO firmware!" 
- #   } 
- #} 
+# check if a login banner message is used
+if ($CiscoConfig.loginBanner) {
+    Write-Output "`tENABLED`t`tLogin banner"
+    Write-Verbose "The configuration contains a login warning banner.  Ensure the message conforms to the required banner text."
+} else {
+    Write-Output "`tDISABLED`tLogin banner"
+    Write-Verbose "The configuration does not include a login warning banner.  Add the approved login warning banner text."
+}
