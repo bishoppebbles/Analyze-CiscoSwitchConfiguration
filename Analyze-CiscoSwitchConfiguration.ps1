@@ -5,20 +5,20 @@
     This script parses a plain text formatted Cisco switch configuration file and checks for specific security configuration entries.  It displays whether certain configuration requirements pass or fail the check.
 .PARAMETER ConfigFile
     The saved Cisco switch configuration file
-.NOTES
-    Version 1.0
-    Sam Pursglove
-    Last modified: 01 AUG 2018
 .EXAMPLE
     Analyze-CiscoSwitchConfiguration.ps1 cisco_config.txt
 
     Analyze the Cisco switch configuration security settings.
+.NOTES
+    Version 1.0.1
+    Sam Pursglove
+    Last modified: 08 NOV 2018
 #>
 
 [CmdletBinding()]
 param (
 
-    [Parameter(Position=0, Mandatory=$false, ValueFromPipeline=$false, HelpMessage='The saved config file of a Cisco switch')]
+    [Parameter(Position=0, Mandatory=$true, ValueFromPipeline=$false, HelpMessage='The saved config file of a Cisco switch')]
     [string]
     [string]$ConfigFile
 )
@@ -28,7 +28,7 @@ function Search-ConfigForValue {
     
     Param ([string]$SearchString)
 
-    $Config | Where-Object { $_ -match $SearchString } | ForEach-Object { $Matches[1] }
+    $ConfigNoInterfaces | Where-Object { $_ -match $SearchString } | ForEach-Object { $Matches[1] }
 }
 
 
@@ -36,56 +36,66 @@ function Search-ConfigForValue {
 function Search-ConfigQuietly {
     Param ([string]$SearchString)
     
-    $Config | Select-String $SearchString -Quiet
+    $ConfigNoInterfaces | Select-String $SearchString -Quiet
 }
 
-   
+  
+# extract interface information for further analysis; also shortens the size of searches of Select-String
+function Extract-Interfaces {
+    $Flag = $true
+
+    $Config | ForEach-Object { 
+        if ($_ -notmatch "^interface ((Ethernet|FastEthernet|GigabitEthernet|Vlan).+$)" -and $Flag) {
+
+            $ConfigNoInterfaces.Add($_)
+                
+        } else {
+            if ($_ -notmatch "!") {
+                $Interfaces.Add($_)
+                $Flag = $false
+            } else {
+                $Flag = $true
+            }
+        }
+    }
+    #Write-Output $ConfigNoInterfaces
+    $ConfigNoInterfaces | Out-File temp.txt
+}
+
+
+$MinimumIosVersion = 15.0
+
 # read in the config file to memory
 $Config = Get-Content (Join-Path $PSScriptRoot $ConfigFile)
 
-$Interfaces = @{}
+# create two generic lists so the Add() method can be used on an array
+# this was required for the regexs to work correctly after dividing the original config file
+$ConfigNoInterfaces = New-Object System.Collections.Generic.List[System.Object]
+$Interfaces = New-Object System.Collections.Generic.List[System.Object]
 
-# in development... trying to parse config interface information
-<#
-function Extract-Interfaces {
-
-    $Config | ForEach-Object { 
-                if ($_ -match "^interface ((Ethernet|FastEthernet|GigabitEthernet).+$)") {
-                    
-                    $Interfaces.Add($Matches[1], @())
-
-                    while ($_ -ne '!') {
-
-                    }
-                }
-              }
-}
 
 Extract-Interfaces
-
-$Interfaces.'GigabitEthernet1/0/4'
-#>
 
 
 $CiscoConfig = @{
     version=                  Search-ConfigForValue "^version (\d{1,2}\.\d{1,2})$"
     hostname=                 Search-ConfigForValue "^hostname (.+)$"
-    servicePasswordEncrypt=   Search-ConfigQuietly "^service password-encryption$"
-    enableSecret=             Search-ConfigQuietly "^enable secret .+$"
-    enablePassword=           Search-ConfigQuietly "^enable password .+$"
+    servicePasswordEncrypt=   Search-ConfigQuietly  "^service password-encryption$"
+    enableSecret=             Search-ConfigQuietly  "^enable secret .+$"
+    enablePassword=           Search-ConfigQuietly  "^enable password .+$"
     userAccountsSecret=       Search-ConfigForValue "^username (\w+) .*secret .+$"
     userAccountsPassword=     Search-ConfigForValue "^username (\w+) .*password .+$"
-    aaaNewModel=              Search-ConfigQuietly "^aaa new-model$"
-    sshV2=                    Search-ConfigQuietly "^ip ssh version 2$"
-    loginBanner=              Search-ConfigQuietly "^banner (motd|login).+$"
+    aaaNewModel=              Search-ConfigQuietly  "^aaa new-model$"
+    sshV2=                    Search-ConfigQuietly  "^ip ssh version 2$"
+    loginBanner=              Search-ConfigQuietly  "^banner (motd|login).+$"
     
-    aaaAuthLocalEnabled=      Search-ConfigQuietly "^aaa authentication login default local"
-    aaaAuthTacacsEnabled=     Search-ConfigQuietly "^aaa authentication login default group tacacs+"
-    tacacsServer=             Search-ConfigQuietly "^tacacs-server host"
+    aaaAuthLocalEnabled=      Search-ConfigQuietly  "^aaa authentication login default local"
+    aaaAuthTacacsEnabled=     Search-ConfigQuietly  "^aaa authentication login default group tacacs+"
+    tacacsServer=             Search-ConfigQuietly  "^tacacs-server host"
     tacacsServerIp=           Search-ConfigForValue "^tacacs-server host"
 }
 
-$MinimumIosVersion = 15.0
+
 
 Write-Output "$($CiscoConfig.hostname.ToUpper()) (IOS Version $($CiscoConfig.version))"
 
@@ -119,7 +129,7 @@ if ($CiscoConfig.enableSecret) {
 
 # check for local user accounts
 if ($CiscoConfig.userAccountsSecret.Length -gt 0) {
-    Write-Output "`tPASS`t`tLocal accounts with strong password encryption:"
+    Write-Output "`tPASS`t`tLocal accounts with secret password encryption:"
     $i = 1
     foreach ($user in $CiscoConfig.userAccountsSecret) {
         Write-Output "`t`t`t`t`t$i) $($user)"
