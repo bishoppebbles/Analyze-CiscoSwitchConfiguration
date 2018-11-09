@@ -10,9 +10,9 @@
 
     Analyze the Cisco switch configuration security settings.
 .NOTES
-    Version 1.0.1
+    Version 1.0.2
     Sam Pursglove
-    Last modified: 08 NOV 2018
+    Last modified: 09 NOV 2018
 #>
 
 [CmdletBinding()]
@@ -26,42 +26,88 @@ param (
 # searches the config and returns the value(s) of interest if they are found
 function Search-ConfigForValue {
     
-    Param ([string]$SearchString)
+    param ([string]$SearchString, $SourceData)
 
-    $ConfigNoInterfaces | Where-Object { $_ -match $SearchString } | ForEach-Object { $Matches[1] }
+    $SourceData | Where-Object { $_ -match $SearchString } | ForEach-Object { $Matches[1] }
 }
 
 
 # returns true/false if the search term is found in the config
 function Search-ConfigQuietly {
-    Param ([string]$SearchString)
+    param ([string]$SearchString, $SourceData)
     
-    $ConfigNoInterfaces | Select-String $SearchString -Quiet
+    $SourceData | Select-String $SearchString -Quiet
 }
 
   
 # extract interface information for further analysis; also shortens the size of searches of Select-String
-function Extract-Interfaces {
+function Extract-InterfaceSection {
+    # $Flag is used to track when the config section for a given interface ends
     $Flag = $true
+
+    $Properties = @{}
 
     $Config | ForEach-Object { 
         if ($_ -notmatch "^interface ((Ethernet|FastEthernet|GigabitEthernet|Vlan).+$)" -and $Flag) {
 
             $ConfigNoInterfaces.Add($_)
                 
-        } else {
+        } else {            
             if ($_ -notmatch "!") {
-                $Interfaces.Add($_)
+                if ($_ -match "^interface (\w+)(\d\/\d{1,2}(\/\d{1,2})?)") {
+
+                    $Properties.Add('InterfaceSpeed',$Matches[1])
+                    $Properties.Add('InterfaceNumber',$Matches[2])
+
+                } elseif ($_ -match "switchport mode access$") {
+                    
+                    $Properties.Add('Access',$true)
+
+                } elseif ($_ -match "switchport access vlan (\d{1,4})$") {
+                    
+                    $Properties.Add('AccessVlan',$Matches[1])
+
+                } elseif ($_ -match "switchport mode trunk$") {
+                    
+                    $Properties.Add('Trunk',$true)
+
+                } elseif ($_ -match "switchport trunk encapsulation dot1q$") {
+                    
+                    $Properties.Add('Trunk8021q',$true)
+
+                } elseif ($_ -match "switchport port-security$") {
+                    
+                    $Properties.Add('PortSecurity',$true)
+
+                } elseif ($_ -match "switchport port-security mac-address sticky$") {
+                    
+                    $Properties.Add('StickyPort',$true)
+
+                } elseif ($_ -match "spanning-tree portfast$") {
+                    
+                    $Properties.Add('PortFast',$true)
+
+                } elseif ($_ -match "spanning-tree bpdufilter enable$") {
+                    
+                    $Properties.Add('BpduFilter',$true)
+
+                } elseif ($_ -match "spanning-tree bpduguard enable$") {
+                    
+                    $Properties.Add('BpduGuard',$true)
+
+                }
+                
                 $Flag = $false
             } else {
+                $Interfaces.Add((New-Object -TypeName psobject -Property $Properties))
+
+                $Properties.Clear()
+                
                 $Flag = $true
             }
         }
     }
-    #Write-Output $ConfigNoInterfaces
-    $ConfigNoInterfaces | Out-File temp.txt
 }
-
 
 $MinimumIosVersion = 15.0
 
@@ -74,27 +120,28 @@ $ConfigNoInterfaces = New-Object System.Collections.Generic.List[System.Object]
 $Interfaces = New-Object System.Collections.Generic.List[System.Object]
 
 
-Extract-Interfaces
+Extract-InterfaceSection
 
+# test to see if interface sections are parsed properly
+$Interfaces | Format-List -Property *
 
 $CiscoConfig = @{
-    version=                  Search-ConfigForValue "^version (\d{1,2}\.\d{1,2})$"
-    hostname=                 Search-ConfigForValue "^hostname (.+)$"
-    servicePasswordEncrypt=   Search-ConfigQuietly  "^service password-encryption$"
-    enableSecret=             Search-ConfigQuietly  "^enable secret .+$"
-    enablePassword=           Search-ConfigQuietly  "^enable password .+$"
-    userAccountsSecret=       Search-ConfigForValue "^username (\w+) .*secret .+$"
-    userAccountsPassword=     Search-ConfigForValue "^username (\w+) .*password .+$"
-    aaaNewModel=              Search-ConfigQuietly  "^aaa new-model$"
-    sshV2=                    Search-ConfigQuietly  "^ip ssh version 2$"
-    loginBanner=              Search-ConfigQuietly  "^banner (motd|login).+$"
+    version=                  Search-ConfigForValue "^version (\d{1,2}\.\d{1,2})$" $ConfigNoInterfaces
+    hostname=                 Search-ConfigForValue "^hostname (.+)$" $ConfigNoInterfaces
+    servicePasswordEncrypt=   Search-ConfigQuietly  "^service password-encryption$" $ConfigNoInterfaces
+    enableSecret=             Search-ConfigQuietly  "^enable secret .+$" $ConfigNoInterfaces
+    enablePassword=           Search-ConfigQuietly  "^enable password .+$" $ConfigNoInterfaces
+    userAccountsSecret=       Search-ConfigForValue "^username (\w+) .*secret .+$" $ConfigNoInterfaces
+    userAccountsPassword=     Search-ConfigForValue "^username (\w+) .*password .+$" $ConfigNoInterfaces
+    aaaNewModel=              Search-ConfigQuietly  "^aaa new-model$" $ConfigNoInterfaces
+    sshV2=                    Search-ConfigQuietly  "^ip ssh version 2$" $ConfigNoInterfaces
+    loginBanner=              Search-ConfigQuietly  "^banner (motd|login).+$" $ConfigNoInterfaces
     
-    aaaAuthLocalEnabled=      Search-ConfigQuietly  "^aaa authentication login default local"
-    aaaAuthTacacsEnabled=     Search-ConfigQuietly  "^aaa authentication login default group tacacs+"
-    tacacsServer=             Search-ConfigQuietly  "^tacacs-server host"
-    tacacsServerIp=           Search-ConfigForValue "^tacacs-server host"
+    aaaAuthLocalEnabled=      Search-ConfigQuietly  "^aaa authentication login default local" $ConfigNoInterfaces
+    aaaAuthTacacsEnabled=     Search-ConfigQuietly  "^aaa authentication login default group tacacs+" $ConfigNoInterfaces
+    tacacsServer=             Search-ConfigQuietly  "^tacacs-server host" $ConfigNoInterfaces
+    tacacsServerIp=           Search-ConfigForValue "^tacacs-server host" $ConfigNoInterfaces
 }
-
 
 
 Write-Output "$($CiscoConfig.hostname.ToUpper()) (IOS Version $($CiscoConfig.version))"
