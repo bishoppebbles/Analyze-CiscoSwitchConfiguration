@@ -14,9 +14,9 @@
 
     This can be used to analyze multiple configs saved in a single directory
 .NOTES
-    Version 1.0.4
+    Version 1.0.5
     Sam Pursglove
-    Last modified: 06 DEC 2018
+    Last modified: 10 DEC 2018
 #>
 
 [CmdletBinding()]
@@ -26,6 +26,12 @@ param (
     [string]
     [string]$ConfigFile
 )
+
+
+###############################################
+################## FUNCTIONS ##################
+###############################################
+
 
 # searches the config and returns the value(s) of interest if they are found
 function Search-ConfigForValue {
@@ -52,12 +58,17 @@ function Extract-InterfaceSection {
     # $Flag is used to track when the config section for a given interface ends
     $Flag = $true
 
+    # create two generic lists so the Add() method can be used on an array
+    # this was required for the regexs to work correctly after dividing the original config file
+    $NoInterfaces = New-Object System.Collections.Generic.List[System.Object]
+    $Interfaces = New-Object System.Collections.Generic.List[System.Object]
+
     $Properties = @{}
 
     $SourceData | ForEach-Object { 
         if ($_ -notmatch "^interface ((Ethernet|FastEthernet|GigabitEthernet|Vlan).+$)" -and $Flag) {
 
-            $ConfigNoInterfaces.Add($_)
+            $NoInterfaces.Add($_)
                 
         } else {            
            
@@ -131,13 +142,61 @@ function Extract-InterfaceSection {
             }
         }
     }
+
+    $ReturnData = @{
+        noInterfaces = $NoInterfaces
+        interfaces = $Interfaces
+    }
+
+    $ReturnData
 }
 
+<#
+function Extract-VtySection {
+    param ($SourceData)
 
-# looks at the access and/or trunk configuration settings for each interface
-# and prints out information related to various settings like the physical
-# interface count, shutdown interfaces, access and native VLANs, and trunk
-# encapsulation type
+    # $Flag is used to track when the config section for a given interface ends
+    $Flag = $true
+
+    $Properties = @{}
+
+    $SourceData | ForEach-Object { 
+        if ($_ -match "^line con 0$") {
+
+        }
+        
+        if ($_ -match "^line vty 0 4$)" -and $Flag) {
+
+            $ConfigNoInterfaces.Add($_)
+                
+        } else {            
+           
+            if ($_ -notmatch "!") {
+                if ($_ -match "^interface (\w+)(\d\/\d{1,2}(\/\d{1,2})?)") {
+
+                    $Properties.Add('InterfaceType',$Matches[1])
+                    $Properties.Add('InterfaceNumber',$Matches[2])
+
+                } 
+                
+                $Flag = $false
+            } else {
+                $Interfaces.Add((New-Object -TypeName psobject -Property $Properties))
+
+                $Properties.Clear()
+                
+                $Flag = $true
+            }
+        }
+    }
+}
+
+#>
+
+
+# looks at the access and/or trunk configuration settings for each interface and
+# prints out information related to various settings like the physical interface
+# count, shutdown interfaces, access and native VLANs, and trunk encapsulation type
 function Analyze-AccessTrunkInterfaces {
     param ($SourceData)
 
@@ -147,6 +206,11 @@ function Analyze-AccessTrunkInterfaces {
     [int]$CountVlan1 = 0
     [int]$CountTrunkInterfaces = 0
 
+    $Misconfig = @()
+    $AccessVlans = @{}
+    $EncapsulationTypes = @{}
+    $TrunkNativeVlans = @{}
+
     $SourceData | Where-Object { $_.InterfaceType -ne 'Vlan' } | 
         
         ForEach-Object {
@@ -155,9 +219,9 @@ function Analyze-AccessTrunkInterfaces {
             $CountPhysicalInterfaces++
 
             # check for misconfigurations where an interface has both access and trunk settings
-            if ($_.AccessVlan -ne $null -and $_.Mode -eq 'trunk') {
-                    
-                $Misconfig.Add($_.InterfaceNumber, $_.InterfaceType)
+            if ($_.AccessVlan -gt 0 -and $_.Mode -eq 'trunk') {
+             
+                $Misconfig += "$($_.InterfaceType)$($_.InterfaceNumber)"
             }
                 
             # check if the port is shutdown
@@ -224,11 +288,20 @@ function Analyze-AccessTrunkInterfaces {
                 }
             }
         }
-    $InterfaceStats.Add('CountPhysicalInterfaces', $CountPhysicalInterfaces)
-    $InterfaceStats.Add('CountShutInterfaces', $CountShutInterfaces)
-    $InterfaceStats.Add('CountAccess', $CountAccess)
-    $InterfaceStats.Add('CountVlan1', $CountVlan1)
-    $InterfaceStats.Add('CountTrunkInterfaces', $CountTrunkInterfaces)
+
+    $ReturnData = @{
+        misconfig=          $Misconfig
+        accessVlans=        $AccessVlans
+        encapsulationTypes= $EncapsulationTypes
+        trunkNativeVlans=   $TrunkNativeVlans
+        countPhysicalInterfaces= $CountPhysicalInterfaces
+        countShutInterfaces=     $CountShutInterfaces
+        countAccess=             $CountAccess
+        countVlan1=              $CountVlan1
+        countTrunkInterfaces=    $CountTrunkInterfaces
+    }
+
+    $ReturnData
 }
 
 # check if any interfaces are manually configured for half or full duplex operation
@@ -254,36 +327,47 @@ function Analyze-Duplex {
             }
         }
     }
-    if ($DuplexConfig.ContainsKey('full')) {
-        Write-Output "`tWARNING`t`tThere are $($DuplexConfig['full']) interfaces configured as full duplex"
-        Write-Verbose "An autoconfiguration duplex setting is recommended."
-    }
 
-    if ($DuplexConfig.ContainsKey('half')) {
-        Write-Output "`tWARNING`t`tThere are $($DuplexConfig['half']) interfaces configured as half duplex"
-        Write-Verbose "An autoconfiguration duplex setting is recommended."
-    }
+    $DuplexConfig
 }
 
 
-# checks if sticky ports are configured for enabled acces interfaces and if the max number of MACs per interface is more than one
-function Analyze-PortSecurity {
+# checks if sticky ports are configured for enabled access interfaces
+function Analyze-PortSecuritySticky {
     param ($SourceData)
+
+    $NonStickyInterfaces = @()
 
     $SourceData | ForEach-Object {
         
-        if ($_.PortSecurityMax -gt 1) {
-            $PortSecurityMaxInterfaces.Add($_.InterfaceNumber, $_.InterfaceType)
-        }
-
-        if ($_.PortSecurity -ne $true -and 
-            $_.StickyPort -ne $true -and 
-            $_.Shutdown -ne $true -and 
-            $_.Mode -ne 'trunk' -and
+        if ($_.PortSecurity  -ne $true   -and 
+            $_.StickyPort    -ne $true   -and 
+            $_.Shutdown      -ne $true   -and 
+            $_.Mode          -ne 'trunk' -and
             $_.Interfacetype -ne 'Vlan') {
-                $NonStickyInterfaces.Add($_.InterfaceNumber, $_.InterfaceType)            
+                $NonStickyInterfaces += "$($_.InterfaceType)$($_.InterfaceNumber)"            
         }
     }
+
+    $NonStickyInterfaces
+}
+
+
+# checks if the maximum number of MACs per interface is more than one
+function Analyze-PortSecurityMax {
+    param ($SourceData)
+
+    $PortSecurityMaxInterfaces = @()
+
+    $SourceData | ForEach-Object {
+
+        if ($_.PortSecurityMax -ne $null -and $_.PortSecurityMax -gt 1) {
+            
+            $PortSecurityMaxInterfaces += "$($_.InterfaceType)$($_.InterfaceNumber)"
+        }
+    }
+
+    $PortSecurityMaxInterfaces
 }
 
 
@@ -292,6 +376,7 @@ function Analyze-SpanningTreeOptions {
     param ($SourceData)
 
     [int]$PortFastCount = 0
+    $BpduGuardFilterEnabled = @()
 
     $SourceData | ForEach-Object {
     
@@ -301,46 +386,37 @@ function Analyze-SpanningTreeOptions {
         }
 
         if ($_.BpduGuard -eq $true -and $_.BpduFilter -eq $true) {
-            $BpduGuardFilterInterfaces.Add($($_.InterfaceNumber),$($_.InterfaceType))
+            $BpduGuardFilterEnabled += "$($_.InterfaceType)$($_.InterfaceNumber)"
         }
     }
 
-    $InterfaceStats.Add('PortFastCount', $PortFastCount)
+    $ReturnData = @{
+        bpduGuardFilterEnabled= $BpduGuardFilterEnabled
+        portFastCount=          $PortFastCount
+    }
+
+    $ReturnData
 }
+
+
+###############################################
+######### DATA CONDITIONING & ANLYSIS #########
+###############################################
 
 
 $MinimumIosVersion = 15.0
 
 # read in the config file to memory
-$Config = Get-Content (Join-Path $PSScriptRoot $ConfigFile)
+$RawConfig = Get-Content (Join-Path $PSScriptRoot $ConfigFile)
+$Config = Extract-InterfaceSection $RawConfig
 
-# create two generic lists so the Add() method can be used on an array
-# this was required for the regexs to work correctly after dividing the original config file
-$ConfigNoInterfaces = New-Object System.Collections.Generic.List[System.Object]
-$Interfaces = New-Object System.Collections.Generic.List[System.Object]
 
-# variables required for the Analyze-AccessTrunkInterfaces function
-$InterfaceStats = @{}
-$Misconfig = @{}
-$AccessVlans = @{}
-$EncapsulationTypes = @{}
-$TrunkNativeVlans = @{}
+# these variables extract the switch hostname and IOS version they were pulled from the
+# $CiscoConfig hash table so the script would fail faster if an invalid file was supplied as input
+# it will also fail if a valid config doesn't have a hostname or IOS version number
+$version  = Search-ConfigForValue "^version (\d{1,2}\.\d{1,2})$" $Config.noInterfaces
+$hostname = Search-ConfigForValue "^hostname (.+)$"              $Config.noInterfaces
 
-# varible required for the Analyze-SpanningTreeOptions function
-$BpduGuardFilterInterfaces = @{}
-
-# variable required for the Analyze-PortSecurity function
-$PortSecurityMaxInterfaces = @{}
-$NonStickyInterfaces = @{}
-
-Extract-InterfaceSection $Config
-
-# these variables extract the switch hostname and IOS version
-# they were pulled from the $CiscoConfig hash table so the script would fail faster
-# if an invalid file was supplied as input, it will also fail if a valid config
-# doesn't have a hostname or IOS version number
-$version  = Search-ConfigForValue "^version (\d{1,2}\.\d{1,2})$" $ConfigNoInterfaces
-$hostname = Search-ConfigForValue "^hostname (.+)$" $ConfigNoInterfaces
 
 if ($hostname -ne $null -or $version -ne $null) {
     Write-Output "$($hostname.ToUpper()) (IOS Version $($version))"
@@ -350,29 +426,39 @@ if ($hostname -ne $null -or $version -ne $null) {
     Exit
 }
 
-Analyze-AccessTrunkInterfaces $Interfaces
-Analyze-PortSecurity $Interfaces
+
+$AccessTrunk=                 Analyze-AccessTrunkInterfaces $Config.interfaces
+$NonSticky=                   Analyze-PortSecuritySticky    $Config.interfaces
+$PortSecurityMaxCount=        Analyze-PortSecurityMax       $Config.interfaces
+$DuplexConfig=                Analyze-Duplex                $Config.interfaces
+$SpanningTreeInterfaceConfig= Analyze-SpanningTreeOptions   $Config.interfaces
+
 
 $CiscoConfig = @{
-    servicePasswordEncrypt= Search-ConfigQuietly  "^service password-encryption$" $ConfigNoInterfaces
-    enableSecret=           Search-ConfigQuietly  "^enable secret .+$" $ConfigNoInterfaces
-    enablePassword=         Search-ConfigQuietly  "^enable password .+$" $ConfigNoInterfaces
-    userAccountsSecret=     Search-ConfigForValue "^username (\w+) .*secret .+$" $ConfigNoInterfaces
-    userAccountsPassword=   Search-ConfigForValue "^username (\w+) .*password .+$" $ConfigNoInterfaces
-    aaaNewModel=            Search-ConfigQuietly  "^aaa new-model$" $ConfigNoInterfaces
-    sshV2=                  Search-ConfigQuietly  "^ip ssh version 2$" $ConfigNoInterfaces
-    loginBanner=            Search-ConfigForValue "^banner (motd|login).+$" $ConfigNoInterfaces
-    snmpV2ReadOnly=         Search-ConfigQuietly  "^snmp-server community .+ RO" $ConfigNoInterfaces
-    snmpV2ReadOnlyAcl=      Search-ConfigForValue "^snmp-server community .+ RO (.*)$" $ConfigNoInterfaces
-    snmpV2ReadWrite=        Search-ConfigQuietly  "^snmp-server community .+ RW" $ConfigNoInterfaces
-    httpMgmtInterface=      Search-ConfigQuietly  "^ip http server$" $ConfigNoInterfaces
+    servicePasswordEncrypt= Search-ConfigQuietly  "^service password-encryption$"                   $Config.noInterfaces
+    enableSecret=           Search-ConfigQuietly  "^enable secret .+$"                              $Config.noInterfaces
+    enablePassword=         Search-ConfigQuietly  "^enable password .+$"                            $Config.noInterfaces
+    userAccountsSecret=     Search-ConfigForValue "^username (\w+) .*secret .+$"                    $Config.noInterfaces
+    userAccountsPassword=   Search-ConfigForValue "^username (\w+) .*password .+$"                  $Config.noInterfaces
+    aaaNewModel=            Search-ConfigQuietly  "^aaa new-model$"                                 $Config.noInterfaces
+    sshV2=                  Search-ConfigQuietly  "^ip ssh version 2$"                              $Config.noInterfaces
+    loginBanner=            Search-ConfigForValue "^banner (motd|login).+$"                         $Config.noInterfaces
+    snmpV2ReadOnly=         Search-ConfigQuietly  "^snmp-server community .+ RO"                    $Config.noInterfaces
+    snmpV2ReadOnlyAcl=      Search-ConfigForValue "^snmp-server community .+ RO (.*)$"              $Config.noInterfaces
+    snmpV2ReadWrite=        Search-ConfigQuietly  "^snmp-server community .+ RW"                    $Config.noInterfaces
+    httpMgmtInterface=      Search-ConfigQuietly  "^ip http server$"                                $Config.noInterfaces
+    ntpServer=              Search-ConfigForValue "^ntp server (\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3})"   $Config.noInterfaces
 
-    aaaAuthLocalEnabled=    Search-ConfigQuietly  "^aaa authentication login default local" $ConfigNoInterfaces
-    aaaAuthTacacsEnabled=   Search-ConfigQuietly  "^aaa authentication login default group tacacs+" $ConfigNoInterfaces
-    tacacsServer=           Search-ConfigQuietly  "^tacacs-server host" $ConfigNoInterfaces
-    tacacsServerIp=         Search-ConfigForValue "^tacacs-server host" $ConfigNoInterfaces
+    aaaAuthLocalEnabled=    Search-ConfigQuietly  "^aaa authentication login default local"         $Config.noInterfaces
+    aaaAuthTacacsEnabled=   Search-ConfigQuietly  "^aaa authentication login default group tacacs+" $Config.noInterfaces
+    tacacsServer=           Search-ConfigQuietly  "^tacacs-server host"                             $Config.noInterfaces
+    tacacsServerIp=         Search-ConfigForValue "^tacacs-server host"                             $Config.noInterfaces
 }
 
+
+###############################################
+############## PASS/FAIL OUTPUT ###############
+###############################################
 
 
 # check if a version of older than Cisco IOS 15 is being used
@@ -420,6 +506,19 @@ if ($CiscoConfig.userAccountsPassword.Length -gt 0) {
         $i += 1
     }
     Write-Verbose "All local user accunts should be stored with the strongest form of encryption using the the command 'username <user> secret <password>'"
+}
+
+# check for NTP server configuration
+if ($CiscoConfig.ntpServer.Length -gt 0) {
+    Write-Output "`tPASS`t`tNTP server(s):"
+  
+    foreach ($server in $CiscoConfig.ntpServer) {
+        Write-Output "`t`t`t`t`t$($server)"
+    }
+} else {
+
+    Write-Output "`tFAIL`t`tNo NTP servers have been configured"
+    Write-Verbose "Configure at least one NTP server using the 'ntp server <server_ip_address>' command"
 }
 
 # check is aaa is enabled
@@ -473,68 +572,80 @@ if ($CiscoConfig.httpMgmtInterface) {
 }
 
 # displays how many interfaces use default access VLAN 1
-if ($InterfaceStats['CountVlan1'] -gt 0) {
-    Write-Output "`tFAIL`t`tThere are $($InterfaceStats['CountVlan1']) interface(s) configured for access VLAN 1"
+if ($AccessTrunk.CountVlan1 -gt 0) {
+    Write-Output "`tFAIL`t`tThere are $($AccessTrunk.countVlan1) interface(s) configured for access VLAN 1"
     Write-Verbose "All access ports should use a VLAN other than VLAN 1"
 } else {
     Write-Output "`tPASS`t`tAll access ports use an access VLAN other than VLAN 1"
 }
 
 # displays if more than one MAC address per port can be used with port-security
-if ($PortSecurityMaxInterfaces.Count -gt 0) {
-    Write-Output "`tFAIL`t`tYou have $($PortSecurityMaxInterfaces.Count) interface(s) that allow more than one MAC address on an interface for port-security"
-    $PortSecurityMaxInterfaces.GetEnumerator() | 
-    ForEach-Object {
-        Write-Output "`t`t`t`t`t$($_.Value)$($_.Key)"
-    }
+if ($PortSecurityMaxCount.Count -gt 0) {
+    Write-Output "`tFAIL`t`tYou have $($PortSecurityMaxCount.Count) interface(s) that allow more than one MAC address on an interface for port-security"
+    $PortSecurityMaxCount | 
+        ForEach-Object {
+            Write-Output "`t`t`t`t`t$_"
+        }
 }
 
-# displays enabled accessinterfaces that are not configured with sticky ports
-if ($NonStickyInterfaces.Count -gt 0) {
-    Write-Output "`tFAIL`t`tYou have $($NonStickyInterfaces.Count) enabled interface(s) that are not configured with sticky port port-security"
-    $NonStickyInterfaces.GetEnumerator() |
-    ForEach-Object {
-        Write-Output "`t`t`t`t`t$($_.Value)$($_.Key)"
-    }
+# displays enabled access interfaces that are not configured with sticky ports
+if ($NonSticky.Count -gt 0) {
+    Write-Output "`tFAIL`t`tYou have $($NonSticky.Count) enabled access interface(s) without sticky port port-security configured"
+    $NonSticky |
+        ForEach-Object {
+            Write-Output "`t`t`t`t`t$_"
+        }
 } else {
     Write-Output "`tPASS`t`tAll enabled interface(s) are configured with sticky port port-security"
 }
 
 # diplays interfaces if they are misconfigured using both access and trunk commands
-if ($Misconfig.Count -gt 0) {
-    Write-Output "`tWARNING`t`tYou have interface(s) configured with access and trunk settings"
-    $Misconfig.GetEnumerator() | 
+if ($AccessTrunk.misconfig.Count -gt 0) {
+    Write-Output "`tWARNING`t`tYou have $($AccessTrunk.misconfig.Count) interface(s) configured with access and trunk settings"
+    $AccessTrunk.misconfig | 
         ForEach-Object {
-            Write-Output "`t`t`t`t`t$($_.Value)$($_.Key)"
+            Write-Output "`t`t`t`t`t$_"
         }
     Write-Verbose "An interface should be configured for access or trunk mode, but not both."
 }
 
+# check if the duplex setting is not set to autoconfiguration (i.e., it's set to full/half)
+if ($DuplexConfig.ContainsKey('full')) {
+    Write-Output "`tWARNING`t`tThere are $($DuplexConfig['full']) interfaces configured as full duplex"
+    Write-Verbose "An autoconfiguration duplex setting is recommended."
+}
 
-Analyze-Duplex $Interfaces
-Analyze-SpanningTreeOptions $Interfaces
-
+if ($DuplexConfig.ContainsKey('half')) {
+    Write-Output "`tWARNING`t`tThere are $($DuplexConfig['half']) interfaces configured as half duplex"
+    Write-Verbose "An autoconfiguration duplex setting is recommended."
+}
 
 # diplays interfaces that are misconfigured if they have both BPDUGuard and BPDUFilter enabled
-if ($BpduGuardFilterInterfaces.Count -gt 0) {
-    Write-Output "`tWARNING`t`tYou have interface(s) configured with both BPDUGuard and BPDUFilter"
-    $BpduGuardFilterInterfaces.GetEnumerator() | Sort-Object |
+if ($SpanningTreeInterfaceConfig.bpduGuardFilterEnabled.Count -gt 0) {
+    Write-Output "`tWARNING`t`tYou have $($SpanningTreeInterfaceConfig.bpduGuardFilterEnabled.Count) interface(s) configured with both BPDUGuard and BPDUFilter"
+    $SpanningTreeInterfaceConfig.bpduGuardFilterEnabled |
         ForEach-Object {
-            Write-Output "`t`t`t`t`t$($_.Value)$($_.Key)"
+            Write-Output "`t`t`t`t`t$_"
         }
     Write-Verbose "BPDUGuard and BDPUFilter are mutually exclusive spanning-tree features.  If they are configured on the same interface BPDUGuard is effectivley disabled and BPDUFilter will stay operational.  It is a recommended practice to configure each access port with PortFast and BPDUGuard, disable BPDUFilter."
 }
 
+
+###############################################
+############# PRINT GENERAL STATS #############
+###############################################
+
 # prints some general interface stats info of the switch
 Write-Output "`n`tInterface statistics:"
-Write-Output "`t`tPhysical ports:`t$($InterfaceStats['CountPhysicalInterfaces'])"
-Write-Output "`t`tShutdown ports:`t$($InterfaceStats['CountShutInterfaces'])"
-Write-Output "`t`tAccess ports:`t$($InterfaceStats['CountAccess'])"
-Write-Output "`t`tTrunk ports:`t$($InterfaceStats['CountTrunkInterfaces'])`n"
+Write-Output "`t`tPhysical ports:`t$($AccessTrunk.countPhysicalInterfaces)"
+Write-Output "`t`tShutdown ports:`t$($AccessTrunk.CountShutInterfaces)"
+Write-Output "`t`tAccess ports:`t$($AccessTrunk.CountAccess)"
+Write-Output "`t`tTrunk ports:`t$($AccessTrunk.CountTrunkInterfaces)"
+Write-Output "`t`tPortFast ports: $($SpanningTreeInterfaceConfig.portFastCount)`n"
 
 # print the summary of access vlans
-if ($AccessVlans.Count -gt 0) {
-    $AccessVlans.GetEnumerator() | 
+if ($AccessTrunk.accessVlans.Count -gt 0) {
+    $AccessTrunk.accessVlans.GetEnumerator() | 
         ForEach-Object {
             Write-Output "`t`tAccess VLAN $($_.Key): $($_.Value) active interface(s)"
         }
@@ -542,8 +653,8 @@ if ($AccessVlans.Count -gt 0) {
 }
 
 # print the summary of encapsulations types used
-if ($EncapsulationTypes.Count -gt 0) {
-    $EncapsulationTypes.GetEnumerator() | 
+if ($AccessTrunk.encapsulationTypes.Count -gt 0) {
+    $AccessTrunk.encapsulationTypes.GetEnumerator() | 
         ForEach-Object {
             Write-Output "`t`t$($_.Key) encapsulation: $($_.Value) active interface(s)"
         }
@@ -551,19 +662,13 @@ if ($EncapsulationTypes.Count -gt 0) {
 }
 
 # print the summary of native trunk vlans
-if ($TrunkNativeVlans.Count -gt 0) {
-    $TrunkNativeVlans.GetEnumerator() | 
+if ($AccessTrunk.trunkNativeVlans.Count -gt 0) {
+    $AccessTrunk.trunkNativeVlans.GetEnumerator() | 
         ForEach-Object {
             Write-Output "`t`tTrunk native VLAN $($_.Key): $($_.Value) active interface(s)"
         }
     Write-Output ""
 }
-
-# print the count of interfaces that have PortFast enabled
-if ($InterfaceStats['PortFastCount'] -gt 0) {
-    Write-Output "`t`tPortFast: $($InterfaceStats['PortFastCount']) interface(s)"
-}
-
 
 <#
     TODO:
