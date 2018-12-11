@@ -492,18 +492,14 @@ if ($CiscoConfig.enableSecret) {
 # check for local user accounts
 if ($CiscoConfig.userAccountsSecret.Length -gt 0) {
     Write-Output "`tPASS`t`tLocal accounts with secret password encryption:"
-    $i = 1
     foreach ($user in $CiscoConfig.userAccountsSecret) {
-        Write-Output "`t`t`t`t`t$i) $($user)"
-        $i += 1
+        Write-Output "`t`t`t`t$user"
     }
 }
 if ($CiscoConfig.userAccountsPassword.Length -gt 0) {
     Write-Output "`tFAIL`t`tLocal accounts with weak password encryption:"
-    $i = 1
     foreach ($user in $CiscoConfig.userAccountsPassword) {
-        Write-Output "`t`t`t`t`t$i) $($user)"
-        $i += 1
+        Write-Output "`t`t`t`t$user"
     }
     Write-Verbose "All local user accunts should be stored with the strongest form of encryption using the the command 'username <user> secret <password>'"
 }
@@ -513,7 +509,7 @@ if ($CiscoConfig.ntpServer.Length -gt 0) {
     Write-Output "`tPASS`t`tNTP server(s):"
   
     foreach ($server in $CiscoConfig.ntpServer) {
-        Write-Output "`t`t`t`t`t$($server)"
+        Write-Output "`t`t`t`t$($server)"
     }
 } else {
 
@@ -611,12 +607,12 @@ if ($AccessTrunk.misconfig.Count -gt 0) {
 
 # check if the duplex setting is not set to autoconfiguration (i.e., it's set to full/half)
 if ($DuplexConfig.ContainsKey('full')) {
-    Write-Output "`tWARNING`t`tThere are $($DuplexConfig['full']) interfaces configured as full duplex"
+    Write-Output "`tWARNING`t`tThere is/are $($DuplexConfig['full']) interface(s) configured as full duplex"
     Write-Verbose "An autoconfiguration duplex setting is recommended."
 }
 
 if ($DuplexConfig.ContainsKey('half')) {
-    Write-Output "`tWARNING`t`tThere are $($DuplexConfig['half']) interfaces configured as half duplex"
+    Write-Output "`tWARNING`t`tThere is/are $($DuplexConfig['half']) interface(s) configured as half duplex"
     Write-Verbose "An autoconfiguration duplex setting is recommended."
 }
 
@@ -672,7 +668,23 @@ if ($AccessTrunk.trunkNativeVlans.Count -gt 0) {
 
 <#
     TODO:
-        line vty login ssh stuff
-
+        line con 0
+            password protected (login local, etc.)
+        line vty 0 4|5 15
+            password protected (login local, etc.)
+            access-class (access list) in
+            transport input ssh
+        trunk native VLAN
+            switchport trunk native vlan xxxx
+        display offending interfaces for access vlan 1
+        display offending interfaces for no sticky ports
         snmpv3 checks
+            snmp-server group (group) v3 priv read (view)
+            snmp-server group (group) v3 priv read (view) write (view)
+            snmp-server group (group) v3 priv 
+            snmp-server group (group) v3 priv write (view) 
+            snmp-server group (group) v3 priv 
+        list VLAN used and their name
+        list ACL type (standard, extended, named) and name/number
+            ip access-list standard (name/number)
 #>
