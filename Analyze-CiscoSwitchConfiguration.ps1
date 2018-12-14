@@ -151,47 +151,73 @@ function Extract-InterfaceSection {
     $ReturnData
 }
 
-<#
+
+function Extract-ConSection {
+    param ($SourceData)
+
+    # $Flag is used to track when the config section for a given interface ends
+    $Con0Flag = $false
+
+    $Properties = @{}
+
+    $SourceData | ForEach-Object {      
+        # determine when the console config section begins
+        if ($_ -match "^line con 0$") {
+            $Con0Flag = $true
+        }
+
+        # determine when the console config section ends
+        if ($_ -match "^line vty 0 4$") {
+            $Con0Flag = $false
+        }
+
+        if ($Con0Flag) {
+
+            # extract console config settings
+
+        }        
+    }
+}
+
+
 function Extract-VtySection {
     param ($SourceData)
 
     # $Flag is used to track when the config section for a given interface ends
-    $Flag = $true
+    $Vty0_4Flag  = $false
+    $Vty5_15Flag = $false
 
     $Properties = @{}
 
-    $SourceData | ForEach-Object { 
-        if ($_ -match "^line con 0$") {
-
-        }
+    $SourceData | ForEach-Object {      
+        # determine when the vty 0 4 section begins
+        if ($_ -match "^line vty 0 4$)") {
+            
+            $Vty0_4Flag  = $true               
+        } 
         
-        if ($_ -match "^line vty 0 4$)" -and $Flag) {
-
-            $ConfigNoInterfaces.Add($_)
-                
-        } else {            
-           
-            if ($_ -notmatch "!") {
-                if ($_ -match "^interface (\w+)(\d\/\d{1,2}(\/\d{1,2})?)") {
-
-                    $Properties.Add('InterfaceType',$Matches[1])
-                    $Properties.Add('InterfaceNumber',$Matches[2])
-
-                } 
-                
-                $Flag = $false
-            } else {
-                $Interfaces.Add((New-Object -TypeName psobject -Property $Properties))
-
-                $Properties.Clear()
-                
-                $Flag = $true
-            }
+        # determine when the vty 0 4 section ends and the vty 5 15 section begins
+        if ($_ -match "^line vty 5 15$)") {
+            
+            $Vty0_4Flag  = $false
+            $Vty0_15Flag = $true           
         }
+
+        if ($Vty0_4Flag) {
+
+            # extract vty 0 4 config settings
+        }
+
+        if ($Vty0_15Flag) {
+
+            if ($_ -notmatch "!") {
+                
+                # extract vty 0 15 config settings
+            }
+        }       
     }
 }
 
-#>
 
 
 # looks at the access and/or trunk configuration settings for each interface and
