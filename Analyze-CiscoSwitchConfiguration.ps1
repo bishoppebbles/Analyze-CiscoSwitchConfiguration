@@ -23,7 +23,6 @@
 param (
 
     [Parameter(Position=0, Mandatory=$true, ValueFromPipeline=$false, HelpMessage='The saved config file of a Cisco switch')]
-    [string]
     [string]$ConfigFile
 )
 
@@ -174,9 +173,31 @@ function Extract-ConSection {
         if ($Con0Flag) {
 
             # extract console config settings
+            if ($_ -match "logging synchronous$") {
 
-        }        
+                $Properties.Add('ConLoggingSync',$true)
+
+            } elseif ($_ -match "exec-timeout (\d{1,5})\s?(\d{0,6})") {
+                    
+                $Properties.Add('ConExecTimeMin',$Matches[1])
+                $Properties.Add('ConExecTimeSec',$Matches[2])
+
+            } elseif ($_ -match "login local$") {
+
+                $Properties.Add('ConLoginLocal',$true)
+                
+            } elseif ($_ -match "transport preferred (\w+)$") {
+                    
+                $Properties.Add('ConTransportPref',$Matches[1])
+            
+            } elseif ($_ -match "transport output (\w+)$") {
+                    
+                $Properties.Add('ConTransportOut',$Matches[1])
+            }
+        }
     }
+
+    New-Object -TypeName psobject -Property $Properties
 }
 
 
@@ -426,7 +447,7 @@ function Analyze-SpanningTreeOptions {
 
 
 ###############################################
-######### DATA CONDITIONING & ANLYSIS #########
+######### DATA CONDITIONING & ANALYSIS ########
 ###############################################
 
 
@@ -435,6 +456,7 @@ $MinimumIosVersion = 15.0
 # read in the config file to memory
 $RawConfig = Get-Content (Join-Path $PSScriptRoot $ConfigFile)
 $Config = Extract-InterfaceSection $RawConfig
+$ConsoleData = Extract-ConSection $Config.noInterfaces
 
 
 # these variables extract the switch hostname and IOS version they were pulled from the
@@ -651,6 +673,52 @@ if ($SpanningTreeInterfaceConfig.bpduGuardFilterEnabled.Count -gt 0) {
         }
     Write-Verbose "BPDUGuard and BDPUFilter are mutually exclusive spanning-tree features.  If they are configured on the same interface BPDUGuard is effectivley disabled and BPDUFilter will stay operational.  It is a recommended practice to configure each access port with PortFast and BPDUGuard, disable BPDUFilter."
 }
+
+
+###############################################
+############## CONSOLE ANALYSIS ###############
+###############################################
+
+
+if ($ConsoleData.ConLoggingSync) {
+    Write-Verbose "Console line logging synchronous is enabled"
+} else {
+    Write-Verbose "Console line logging synchronous is disabled.  Enabled for clearer console output."
+}
+
+Write-Output "Exec timeout - min:$($ConsoleData.ConExecTimeMin) sec:$($ConsoleData.ConExecTimeSec)"
+Write-Output "Login local - $($ConsoleData.ConLoginLocal)"
+Write-Output "Transport preferred - $($ConsoleData.ConTransportPref)"
+Write-Output "Transport output - $($ConsoleData.ConTransportOut)"
+
+
+<#
+} elseif ($_ -match "exec-timeout (\d{1,5})\s?(\d{0,6})") {
+                    
+    $Properties.Add('ConExecTimeMin',$Matches[1])
+    $Properties.Add('ConExecTimeSec',$Matches[2])
+
+} elseif ($_ -match "login local$") {
+
+    $Properties.Add('ConLoginLocal',$true)
+                
+} elseif ($_ -match "transport preferred (\w+)$") {
+                    
+    $Properties.Add('ConTransportPref',$Matches[1])
+            
+} elseif ($_ -match "transport output (\w+)$") {
+                    
+    $Properties.Add('ConTransportOut',$Matches[1])
+}
+#>
+
+
+
+###############################################
+################ VTY ANALYSIS #################
+###############################################
+
+
 
 
 ###############################################
