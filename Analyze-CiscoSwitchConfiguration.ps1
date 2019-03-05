@@ -212,31 +212,99 @@ function Extract-VtySection {
 
     $SourceData | ForEach-Object {      
         # determine when the vty 0 4 section begins
-        if ($_ -match "^line vty 0 4$)") {
+        if ($_ -match "^line vty 0 4$") {
             
             $Vty0_4Flag  = $true               
         } 
         
         # determine when the vty 0 4 section ends and the vty 5 15 section begins
-        if ($_ -match "^line vty 5 15$)") {
+        if ($_ -match "^line vty 5 15$") {
             
             $Vty0_4Flag  = $false
-            $Vty0_15Flag = $true           
+            $Vty5_15Flag = $true           
         }
 
         if ($Vty0_4Flag) {
 
             # extract vty 0 4 config settings
+            if ($_ -match "logging synchronous$") {
+
+                $Properties.Add('Vty0_4LoggingSync',$true)
+
+            } elseif ($_ -match "exec-timeout (\d{1,5})\s?(\d{0,6})") {
+                    
+                $Properties.Add('Vty0_4ExecTimeMin',$Matches[1])
+                $Properties.Add('Vty0_4ExecTimeSec',$Matches[2])
+
+            } elseif ($_ -match "password") {
+                
+                $Properties.Add('Vty0_4Password',$true)
+
+            } elseif ($_ -match "login local$") {
+
+                $Properties.Add('Vty0_4LoginLocal',$true)
+                
+            } elseif ($_ -match "access-class (.+) in") {
+
+                $Properties.Add('Vty0_4AclIn',$Matches[1])
+            
+            } elseif ($_ -match "transport preferred (\w+)$") {
+                    
+                $Properties.Add('Vty0_4TransportPref',$Matches[1])
+            
+            } elseif ($_ -match "transport output (\w+)$") {
+                    
+                $Properties.Add('Vty0_4TransportOut',$Matches[1])
+            
+            } elseif ($_ -match "transport input (\w+)$") {
+                    
+                $Properties.Add('Vty0_4TransportIn',$Matches[1])
+            }
         }
 
-        if ($Vty0_15Flag) {
+        if ($Vty5_15Flag) {
 
             if ($_ -notmatch "!") {
                 
-                # extract vty 0 15 config settings
+                # extract vty 5 15 config settings
+                if ($_ -match "logging synchronous$") {
+
+                    $Properties.Add('Vty5_15LoggingSync',$true)
+
+                } elseif ($_ -match "exec-timeout (\d{1,5})\s?(\d{0,6})") {
+                    
+                    $Properties.Add('Vty5_15ExecTimeMin',$Matches[1])
+                    $Properties.Add('Vty5_15ExecTimeSec',$Matches[2])
+
+                } elseif ($_ -match "password") {
+                
+                    $Properties.Add('Vty5_15Password',$true)
+
+                } elseif ($_ -match "login local$") {
+
+                    $Properties.Add('Vty5_15LoginLocal',$true)
+                
+                } elseif ($_ -match "access-class (.+) in") {
+
+                    $Properties.Add('Vty5_15AclIn',$Matches[1])
+            
+                } elseif ($_ -match "transport preferred (\w+)$") {
+                    
+                    $Properties.Add('Vty5_15TransportPref',$Matches[1])
+            
+                } elseif ($_ -match "transport output (\w+)$") {
+                    
+                    $Properties.Add('Vty5_15TransportOut',$Matches[1])
+            
+                } elseif ($_ -match "transport input (\w+)$") {
+                    
+                    $Properties.Add('Vty5_15TransportIn',$Matches[1])
+                }
             }
         }       
     }
+
+    New-Object -TypeName psobject -Property $Properties
 }
 
 
@@ -454,9 +522,15 @@ function Analyze-SpanningTreeOptions {
 $MinimumIosVersion = 15.0
 
 # read in the config file to memory
-$RawConfig = Get-Content (Join-Path $PSScriptRoot $ConfigFile)
-$Config = Extract-InterfaceSection $RawConfig
-$ConsoleData = Extract-ConSection $Config.noInterfaces
+$RawConfig=   Get-Content (Join-Path $PSScriptRoot $ConfigFile)
+
+# parse the interface section and remove it from the config so the remaining analysis
+# has less data to parse
+$Config=      Extract-InterfaceSection $RawConfig
+
+# parse the console and vty line subsections
+$ConsoleData= Extract-ConSection $Config.noInterfaces
+$VtyData=     Extract-VtySection $Config.noInterfaces
 
 
 # these variables extract the switch hostname and IOS version they were pulled from the
@@ -541,13 +615,13 @@ if ($CiscoConfig.enableSecret) {
 if ($CiscoConfig.userAccountsSecret.Length -gt 0) {
     Write-Output "`tPASS`t`tLocal accounts with secret password encryption:"
     foreach ($user in $CiscoConfig.userAccountsSecret) {
-        Write-Output "`t`t`t`t$user"
+        Write-Output "`t`t`t`t  $user"
     }
 }
 if ($CiscoConfig.userAccountsPassword.Length -gt 0) {
     Write-Output "`tFAIL`t`tLocal accounts with weak password encryption:"
     foreach ($user in $CiscoConfig.userAccountsPassword) {
-        Write-Output "`t`t`t`t$user"
+        Write-Output "`t`t`t`t  $user"
     }
     Write-Verbose "All local user accunts should be stored with the strongest form of encryption using the the command 'username <user> secret <password>'"
 }
@@ -557,7 +631,7 @@ if ($CiscoConfig.ntpServer.Length -gt 0) {
     Write-Output "`tPASS`t`tNTP server(s):"
   
     foreach ($server in $CiscoConfig.ntpServer) {
-        Write-Output "`t`t`t`t$($server)"
+        Write-Output "`t`t`t`t  $($server)"
     }
 } else {
 
@@ -679,46 +753,50 @@ if ($SpanningTreeInterfaceConfig.bpduGuardFilterEnabled.Count -gt 0) {
 ############## CONSOLE ANALYSIS ###############
 ###############################################
 
-
 if ($ConsoleData.ConLoggingSync) {
     Write-Verbose "Console line logging synchronous is enabled"
 } else {
     Write-Verbose "Console line logging synchronous is disabled.  Enabled for clearer console output."
 }
 
-Write-Output "Exec timeout - min:$($ConsoleData.ConExecTimeMin) sec:$($ConsoleData.ConExecTimeSec)"
-Write-Output "Login local - $($ConsoleData.ConLoginLocal)"
-Write-Output "Transport preferred - $($ConsoleData.ConTransportPref)"
-Write-Output "Transport output - $($ConsoleData.ConTransportOut)"
-
-
-<#
-} elseif ($_ -match "exec-timeout (\d{1,5})\s?(\d{0,6})") {
-                    
-    $Properties.Add('ConExecTimeMin',$Matches[1])
-    $Properties.Add('ConExecTimeSec',$Matches[2])
-
-} elseif ($_ -match "login local$") {
-
-    $Properties.Add('ConLoginLocal',$true)
-                
-} elseif ($_ -match "transport preferred (\w+)$") {
-                    
-    $Properties.Add('ConTransportPref',$Matches[1])
-            
-} elseif ($_ -match "transport output (\w+)$") {
-                    
-    $Properties.Add('ConTransportOut',$Matches[1])
-}
-#>
-
+Write-Output "`n`tExec timeout - min:$($ConsoleData.ConExecTimeMin) sec:$($ConsoleData.ConExecTimeSec)"
+Write-Output "`tLogin local - $($ConsoleData.ConLoginLocal)"
+Write-Output "`tTransport preferred - $($ConsoleData.ConTransportPref)"
+Write-Output "`tTransport output - $($ConsoleData.ConTransportOut)"
 
 
 ###############################################
 ################ VTY ANALYSIS #################
 ###############################################
 
+if ($VtyData.Vty0_4LoggingSync) {
+    Write-Verbose "VTY 0 4 logging synchronous is enabled"
+} else {
+    Write-Verbose "VTY 0 4 logging synchronous is disabled.  Enabled for clearer console output."
+}
 
+Write-Output "`n`tExec timeout - min:$($VtyData.Vty0_4ExecTimeMin) sec:$($VtyData.Vty0_4ExecTimeSec)"
+Write-Output "`tPassword - $($VtyData.Vty0_4Password)"
+Write-Output "`tLogin local - $($VtyData.Vty0_4LoginLocal)"
+Write-Output "`tACL - $($VtyData.Vty0_4AclIn)"
+Write-Output "`tTransport preferred - $($VtyData.Vty0_4TransportPref)"
+Write-Output "`tTransport output - $($VtyData.Vty0_4TransportOut)"
+Write-Output "`tTransport input - $($VtyData.Vty0_4TransportIn)"
+
+
+if ($VtyData.Vty5_15LoggingSync) {
+    Write-Verbose "VTY 5 15 logging synchronous is enabled"
+} else {
+    Write-Verbose "VTY 5 15 logging synchronous is disabled.  Enabled for clearer console output."
+}
+
+Write-Output "`n`tExec timeout - min:$($VtyData.Vty5_15ExecTimeMin) sec:$($VtyData.Vty5_15ExecTimeSec)"
+Write-Output "`tPassword - $($VtyData.Vty5_15Password)"
+Write-Output "`tLogin local - $($VtyData.Vty5_15LoginLocal)"
+Write-Output "`tACL - $($VtyData.Vty5_15AclIn)"
+Write-Output "`tTransport preferred - $($VtyData.Vty5_15TransportPref)"
+Write-Output "`tTransport output - $($VtyData.Vty5_15TransportOut)"
+Write-Output "`tTransport input - $($VtyData.Vty5_15TransportIn)"
 
 
 ###############################################
