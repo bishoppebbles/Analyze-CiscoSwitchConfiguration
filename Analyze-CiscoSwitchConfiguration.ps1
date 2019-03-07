@@ -16,7 +16,7 @@
 .NOTES
     Version 1.0.5
     Sam Pursglove
-    Last modified: 10 DEC 2018
+    Last modified: 07 MAR 2019
 #>
 
 [CmdletBinding()]
@@ -564,6 +564,8 @@ $CiscoConfig = @{
     userAccountsPassword=   Search-ConfigForValue "^username (\w+) .*password .+$"                  $Config.noInterfaces
     aaaNewModel=            Search-ConfigQuietly  "^aaa new-model$"                                 $Config.noInterfaces
     sshV2=                  Search-ConfigQuietly  "^ip ssh version 2$"                              $Config.noInterfaces
+    sshAuthRetry=           Search-ConfigForValue "^ip ssh authentication-retries (\d)$"            $Config.noInterfaces
+    sshTimeout=             Search-ConfigForValue "^ip ssh timeout (\d{1,3})$"                      $Config.noInterfaces
     loginBanner=            Search-ConfigForValue "^banner (motd|login).+$"                         $Config.noInterfaces
     snmpV2ReadOnly=         Search-ConfigQuietly  "^snmp-server community .+ RO"                    $Config.noInterfaces
     snmpV2ReadOnlyAcl=      Search-ConfigForValue "^snmp-server community .+ RO (.*)$"              $Config.noInterfaces
@@ -646,13 +648,37 @@ if ($CiscoConfig.aaaNewModel) {
     Write-Output "`tDISABLED`tAuthentication, Authorization, and Accounting (AAA)"
 }
 
+##################
+###### SSH #######
+##################
+
 # check if SSH v2 is enabled
 if ($CiscoConfig.sshV2) {
     Write-Output "`tPASS`t`tSSH v2 is enabled"
 } else {
-    Write-Output "`tFAIL`tSSH v2 is not enabled"
+    Write-Output "`tFAIL`t`tSSH v2 is not enabled"
     Write-Verbose "SSH v2 should be enabled using the 'ip ssh version 2' command"
 }
+
+# check if SSH authentication retries is greater than 3 (if not configured that's the default, the max allowed is 5)
+if (!$CiscoConfig.sshAuthRetry) {
+    Write-Output "`tPASS`t`tSSH authentication retries uses the default setting (3 retries)"
+} elseif ($CiscoConfig.sshAuthRetry -le 3) {
+    Write-Output "`tPASS`t`tSSH authentication retries is set to $($CiscoConfig.sshAuthRetry)"
+} elseif ($CiscoConfig.sshAuthRetry -gt 3) {
+    Write-Output "`tFAIL`t`tSSH authentication retries exceeds the maximum allowed of 3"
+    Write-Verbose "The default number of SSH authentication retries is 3. There is no need to set this command for compliance."
+}
+
+# check if SSH authentication is set to 120 sec or less
+# this test cannot fail as that is the default setting and also the max but it's included for completeness
+if (!$CiscoConfig.sshTimeout) {
+    Write-Output "`tPASS`t`tSSH authentication timeout is set to the default (120 seconds)"
+} elseif ($CiscoConfig.sshTimeout) {
+    Write-Output "`tPASS`t`tSSH authentication timeout is set to $($CiscoConfig.sshTimeout) second(s)"
+    Write-Verbose "The default SSH authentication timeout is 120 seconds, the maximum SSH authentication timeout is 120 seconds.  The test cannot fail."
+}
+
 
 # check if a login banner message is used
 if ($CiscoConfig.loginBanner) {
@@ -662,6 +688,10 @@ if ($CiscoConfig.loginBanner) {
     Write-Output "`tFAIL`t`tA login and/or motd banner is not configured"
     Write-Verbose "The configuration does not include a login and/or motd banner.  Add the approved warning banner text."
 }
+
+##################
+##### SNMPv2 #####
+##################
 
 # check if SNMPv2 RO strings are used with or without an ACL
 if ($CiscoConfig.snmpV2ReadOnly) {
@@ -681,6 +711,7 @@ if ($CiscoConfig.snmpV2ReadWrite) {
     Write-Output "`tPASS`t`tSNMPv2 Read-Write (RW) community strings are not used"
 }
 
+
 # check if the HTTP web management server is enabled
 if ($CiscoConfig.httpMgmtInterface) {
     Write-Output "`tFAIL`t`tThe HTTP web management server is enabled"
@@ -689,6 +720,7 @@ if ($CiscoConfig.httpMgmtInterface) {
     Write-Output "`tPASS`t`tThe HTTP web management server is disabled"
 }
 
+
 # displays how many interfaces use default access VLAN 1
 if ($AccessTrunk.CountVlan1 -gt 0) {
     Write-Output "`tFAIL`t`tThere are $($AccessTrunk.countVlan1) interface(s) configured for access VLAN 1"
@@ -696,6 +728,7 @@ if ($AccessTrunk.CountVlan1 -gt 0) {
 } else {
     Write-Output "`tPASS`t`tAll access ports use an access VLAN other than VLAN 1"
 }
+
 
 # displays if more than one MAC address per port can be used with port-security
 if ($PortSecurityMaxCount.Count -gt 0) {
