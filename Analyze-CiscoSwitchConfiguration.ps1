@@ -236,6 +236,10 @@ function Extract-VtySection {
                 $Properties.Add('Vty0_4ExecTimeMin',$Matches[1])
                 $Properties.Add('Vty0_4ExecTimeSec',$Matches[2])
 
+            } elseif ($_ -match "login$") {
+                
+                $Properties.Add('Vty0_4Login',$true)
+         
             } elseif ($_ -match "password") {
                 
                 $Properties.Add('Vty0_4Password',$true)
@@ -275,6 +279,10 @@ function Extract-VtySection {
                     
                     $Properties.Add('Vty5_15ExecTimeMin',$Matches[1])
                     $Properties.Add('Vty5_15ExecTimeSec',$Matches[2])
+
+                } elseif ($_ -match "login$") {
+                    
+                    $Properties.Add('Vty5_15Login',$true)
 
                 } elseif ($_ -match "password") {
                 
@@ -654,9 +662,9 @@ if ($CiscoConfig.aaaNewModel) {
 
 # check if SSH v2 is enabled
 if ($CiscoConfig.sshV2) {
-    Write-Output "`tPASS`t`tSSH v2 is enabled"
+    Write-Output "`tPASS`t`tSSH v2 enabled"
 } else {
-    Write-Output "`tFAIL`t`tSSH v2 is not enabled"
+    Write-Output "`tFAIL`t`tSSH v2 not enabled"
     Write-Verbose "SSH v2 should be enabled using the 'ip ssh version 2' command"
 }
 
@@ -664,7 +672,7 @@ if ($CiscoConfig.sshV2) {
 if (!$CiscoConfig.sshAuthRetry) {
     Write-Output "`tPASS`t`tSSH authentication retries uses the default setting (3 retries)"
 } elseif ($CiscoConfig.sshAuthRetry -le 3) {
-    Write-Output "`tPASS`t`tSSH authentication retries is set to $($CiscoConfig.sshAuthRetry)"
+    Write-Output "`tPASS`t`tSSH authentication retries set to $($CiscoConfig.sshAuthRetry)"
 } elseif ($CiscoConfig.sshAuthRetry -gt 3) {
     Write-Output "`tFAIL`t`tSSH authentication retries exceeds the maximum allowed of 3"
     Write-Verbose "The default number of SSH authentication retries is 3. There is no need to set this command for compliance."
@@ -673,10 +681,10 @@ if (!$CiscoConfig.sshAuthRetry) {
 # check if SSH authentication is set to 120 sec or less
 # this test cannot fail as that is the default setting and also the max but it's included for completeness
 if (!$CiscoConfig.sshTimeout) {
-    Write-Output "`tPASS`t`tSSH authentication timeout is set to the default (120 seconds)"
+    Write-Output "`tPASS`t`tSSH authentication timeout set to the default (120 seconds)"
 } elseif ($CiscoConfig.sshTimeout) {
-    Write-Output "`tPASS`t`tSSH authentication timeout is set to $($CiscoConfig.sshTimeout) second(s)"
-    Write-Verbose "The default SSH authentication timeout is 120 seconds, the maximum SSH authentication timeout is 120 seconds.  The test cannot fail."
+    Write-Output "`tPASS`t`tSSH authentication timeout set to $($CiscoConfig.sshTimeout) second(s)"
+    Write-Verbose "The default SSH authentication timeout is 120 seconds, the maximum SSH authentication timeout is 120 seconds.  This requirement cannot fail."
 }
 
 
@@ -786,6 +794,8 @@ if ($SpanningTreeInterfaceConfig.bpduGuardFilterEnabled.Count -gt 0) {
 ############## CONSOLE ANALYSIS ###############
 ###############################################
 
+Write-Output "`n`tCON LINE 0"
+
 if ($ConsoleData.ConLoggingSync) {
     Write-Verbose "Console line logging synchronous is enabled"
 } else {
@@ -802,6 +812,8 @@ Write-Output "`tTransport output - $($ConsoleData.ConTransportOut)"
 ################ VTY ANALYSIS #################
 ###############################################
 
+Write-Output "`n`tVTY LINE 0 4"
+
 if ($VtyData.Vty0_4LoggingSync) {
     Write-Verbose "VTY 0 4 logging synchronous is enabled"
 } else {
@@ -817,13 +829,26 @@ Write-Output "`tTransport output - $($VtyData.Vty0_4TransportOut)"
 Write-Output "`tTransport input - $($VtyData.Vty0_4TransportIn)"
 
 
+Write-Output "`n`tVTY LINE 5 15"
+
 if ($VtyData.Vty5_15LoggingSync) {
-    Write-Verbose "VTY 5 15 logging synchronous is enabled"
+    Write-Verbose "VTY LINE 5 15 logging synchronous is enabled"
 } else {
-    Write-Verbose "VTY 5 15 logging synchronous is disabled.  Enabled for clearer console output."
+    Write-Verbose "VTY LINE 5 15 logging synchronous is disabled.  Enabled for clearer console output."
 }
 
-Write-Output "`n`tExec timeout - min:$($VtyData.Vty5_15ExecTimeMin) sec:$($VtyData.Vty5_15ExecTimeSec)"
+$VTY5_15_execTimeoutTotal = $VtyData.Vty5_15ExecTimeMin * 60 + $VtyData.Vty5_15ExecTimeSec
+
+if (!$VtyData.Vty5_15ExecTimeMin) {
+    Write-Output "`n`tPASS`tVTY LINE 5 15 set to default exec timeout (10 minutes)"
+} elseif ($Vty5_15_execTimeoutTotal -gt 1200) {
+    Write-Output "`n`tFAIL`tVTY LINE 5 15 exec timeout of $($Vty5_15_execTimeoutTotal) seconds exceeds the maximum allowed of 1200 seconds (20 minutes)"
+} else {
+    Write-Output "`n`tPASS`tVTY LINE 5 15 exec timeout of $($Vty5_15_execTimeoutTotal) seconds is within the maximum allowed of 1200 seconds (20 minutes)"
+}
+
+$Properties.Add('Vty5_15Login',$true)
+
 Write-Output "`tPassword - $($VtyData.Vty5_15Password)"
 Write-Output "`tLogin local - $($VtyData.Vty5_15LoginLocal)"
 Write-Output "`tACL - $($VtyData.Vty5_15AclIn)"
@@ -873,22 +898,15 @@ if ($AccessTrunk.trunkNativeVlans.Count -gt 0) {
 
 <#
     TODO:
-        line con 0
-            password protected (login local, etc.)
-        line vty 0 4|5 15
-            password protected (login local, etc.)
-            access-class (access list) in
-            transport input ssh
         trunk native VLAN
             switchport trunk native vlan xxxx
         display offending interfaces for access vlan 1
         display offending interfaces for no sticky ports
         snmpv3 checks
+            snmp-server group (group) v3 priv 
             snmp-server group (group) v3 priv read (view)
+            snmp-server group (group) v3 priv write (view)
             snmp-server group (group) v3 priv read (view) write (view)
-            snmp-server group (group) v3 priv 
-            snmp-server group (group) v3 priv write (view) 
-            snmp-server group (group) v3 priv 
         list VLAN used and their name
         list ACL type (standard, extended, named) and name/number
             ip access-list standard (name/number)
