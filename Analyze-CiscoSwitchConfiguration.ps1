@@ -151,10 +151,49 @@ function Extract-InterfaceSection {
 }
 
 
+# parse the interface vlan1 section of the config
+function Extract-IntVlan1Section {
+    param ($SourceData)
+
+    # flag is used to track when the interface vlan1 section ends
+    $IntVlan1Flag = $false
+
+    $Properties = @{}
+
+    $SourceData | ForEach-Object {      
+        # determine when the interface vlan1 config section begins
+        if ($_ -match "^interface Vlan1$") {
+            $IntVlan1Flag = $true
+        }
+
+        if ($IntVlan1Flag) {
+
+            if ($_ -notmatch "!") {
+                
+                # extract interface vlan1 config settings
+                if ($_ -match "no ip address$") {
+
+                    $Properties.Add('IntVlan1NoIp',$true)
+
+                } elseif ($_ -match "shutdown$") {
+                    
+                    $Properties.Add('IntVlan1Shut',$true)
+                }
+            } else {
+                $IntVlan1Flag = $false
+            }
+        }
+    }
+
+    New-Object -TypeName psobject -Property $Properties
+}
+
+
+# parse the line con 0 section of the config
 function Extract-ConSection {
     param ($SourceData)
 
-    # $Flag is used to track when the config section for a given interface ends
+    # flag is used to track when the config section for a given interface ends
     $Con0Flag = $false
 
     $Properties = @{}
@@ -182,6 +221,14 @@ function Extract-ConSection {
                 $Properties.Add('ConExecTimeMin',$Matches[1])
                 $Properties.Add('ConExecTimeSec',$Matches[2])
 
+            } elseif ($_ -match "login$") {
+                
+                $Properties.Add('ConLogin',$true)
+         
+            } elseif ($_ -match "password") {
+                
+                $Properties.Add('ConPassword',$true)
+
             } elseif ($_ -match "login local$") {
 
                 $Properties.Add('ConLoginLocal',$true)
@@ -201,10 +248,11 @@ function Extract-ConSection {
 }
 
 
+# parse the line vty 0 4 and 5 15 sections of the config
 function Extract-VtySection {
     param ($SourceData)
 
-    # $Flag is used to track when the config section for a given interface ends
+    # flag is used to track when the config section for a given interface ends
     $Vty0_4Flag  = $false
     $Vty5_15Flag = $false
 
@@ -308,6 +356,8 @@ function Extract-VtySection {
                     
                     $Properties.Add('Vty5_15TransportIn',$Matches[1])
                 }
+            } else {
+                $Vty5_15Flag = $false
             }
         }       
     }
@@ -536,9 +586,10 @@ $RawConfig=   Get-Content (Join-Path $PSScriptRoot $ConfigFile)
 # has less data to parse
 $Config=      Extract-InterfaceSection $RawConfig
 
-# parse the console and vty line subsections
-$ConsoleData= Extract-ConSection $Config.noInterfaces
-$VtyData=     Extract-VtySection $Config.noInterfaces
+# parse the interface vlan1, console, and vty line subsections
+$IntVlan1Data= Extract-IntVlan1Section $RawConfig
+$ConsoleData=  Extract-ConSection $Config.noInterfaces
+$VtyData=      Extract-VtySection $Config.noInterfaces
 
 
 # these variables extract the switch hostname and IOS version they were pulled from the
@@ -645,7 +696,7 @@ if ($CiscoConfig.ntpServer.Length -gt 0) {
     }
 } else {
 
-    Write-Output "`tFAIL`t`tNo NTP servers have been configured"
+    Write-Output "`tFAIL`t`tNo NTP servers are configured"
     Write-Verbose "Configure at least one NTP server using the 'ntp server <server_ip_address>' command"
 }
 
@@ -791,7 +842,28 @@ if ($SpanningTreeInterfaceConfig.bpduGuardFilterEnabled.Count -gt 0) {
 
 
 ###############################################
-############## CONSOLE ANALYSIS ###############
+######### INTERFACE VLAN 1 ANALYSIS ###########
+###############################################
+
+Write-Output "`n`tINTERFACE VLAN1"
+
+if ($IntVlan1Data.IntVlan1NoIp) {
+    Write-Output "`tPASS`tNo IP address is assigned to interface Vlan1"
+} else {
+    Write-Output "`tFAIL`tInterface Vlan1 has an assigned IP address"
+    Write-Verbose "Vlan1 must not be used. Remove the IP address assigned to Vlan1."
+}
+
+if ($IntVlan1Data.IntVlan1Shut) {
+    Write-Output "`tPASS`tVlan1 interface is shutdown"
+} else {
+    Write-Output "`tFAIL`tShutdown the Vlan1 interface"
+    Write-Verbose "Vlan1 must not be used. The interface should be explicitly shutdown."
+}
+
+
+###############################################
+############# CONSOLE 0 ANALYSIS ##############
 ###############################################
 
 Write-Output "`n`tCON LINE 0"
@@ -802,59 +874,219 @@ if ($ConsoleData.ConLoggingSync) {
     Write-Verbose "Console line logging synchronous is disabled.  Enabled for clearer console output."
 }
 
-Write-Output "`n`tExec timeout - min:$($ConsoleData.ConExecTimeMin) sec:$($ConsoleData.ConExecTimeSec)"
-Write-Output "`tLogin local - $($ConsoleData.ConLoginLocal)"
-Write-Output "`tTransport preferred - $($ConsoleData.ConTransportPref)"
-Write-Output "`tTransport output - $($ConsoleData.ConTransportOut)"
+$ConsoleExecTimeoutTotal = [int]$ConsoleData.ConExecTimeMin * 60 + $ConsoleData.ConExecTimeSec
+
+# check if the idle console session timeout is 10 minutes or less
+if (!$ConsoleData.ConExecTimeMin) {
+    Write-Output "`tPASS`tDefault timeout set (10 minutes)"
+} elseif ($ConsoleExecTimeoutTotal -gt 600) {
+    Write-Output "`tFAIL`t$($ConsoleExecTimeoutTotal) seconds exceeds the max allowed timeout (10 minutes)"
+} else {
+    Write-Output "`tPASS`t$($ConsoleExecTimeoutTotal) seconds is less than the max allowed timeout (10 minutes)"
+}
+
+# check if console access authentication uses the local user database
+if ($ConsoleData.ConLoginLocal) {
+    Write-Output "`tPASS`tLocal user account database required for remote access"
+    
+    if ($ConsoleData.ConPassword) {
+        Write-Output "`tWARNING`tThe 'login local' and 'password' commands are both set"
+        Write-Verbose "If both commands are set the 'login local' command overrides 'password' and is not used. If the 'login local' command is replaced with the 'login' command user authentication from the local database will no longer be used and the password set via the 'password' command will be active.  Remove the 'password' command using 'no' variant."
+    }
+} elseif ($ConsoleData.ConLogin) {
+    if ($ConsoleData.ConPassword) {
+        Write-Output "`tFAIL`tUnique remote user authentication is not enabled"
+        Write-Verbose "The 'login' command must be replaced with the 'login local' command to authenticate against the local user database.  The 'password' command should be removed using the 'no' variant."
+    } else {
+        Write-Output "`tFAIL`tRemote authentication is disabled but the 'login' command is set"
+        Write-Verbose "The 'login' command must be replaced with the 'login local' command."
+    }
+}
+
+# check the transport output setting
+if ($ConsoleData.ConTransportOut -like "ssh") {
+    Write-Output "`tPASS`tRemote outbound connections are restricted to SSH"
+} elseif (!$ConsoleData.ConTransportOut) {
+    Write-Output "`tWARNING`tRemote outbound connections are not configured, restrict to SSH"
+} else {
+    Write-Output "`tWARNING`tRemote outbound connections are set to use $($ConsoleData.ConTransportOut), restrict to SSH"
+}
+
+# check the transport preferred setting
+if (!$ConsoleData.ConTransportPref -and !$ConsoleData.ConTransportOut) {
+    Write-Output "`tWARNING`tTransport preferred is set to the default (telnet)"
+    Write-Verbose "The transport preferred setting controls which protocol is used if it is not explicitly set. To avoid inadvertant telnet connections set the transport to 'none', 'ssh', or explicity set the transport output."
+} elseif ($ConsoleData.ConTransportPref -like "telnet") {
+    Write-Output "`tWARNING`tTransport preferred is set to telnet"
+    Write-Verbose "The transport preferred setting controls which protocol is used if it is not explicitly set. Set this to 'none', 'ssh', or explicity set the transport output."
+} elseif ($ConsoleData.ConTransportPref) {
+    Write-Output "`tPASS`tTransport preferred is set to $($ConsoleData.ConTransportPref)"
+}
 
 
 ###############################################
-################ VTY ANALYSIS #################
+############## VTY 0 4 ANALYSIS ###############
 ###############################################
 
 Write-Output "`n`tVTY LINE 0 4"
 
 if ($VtyData.Vty0_4LoggingSync) {
-    Write-Verbose "VTY 0 4 logging synchronous is enabled"
+    Write-Verbose "Logging synchronous is enabled"
 } else {
-    Write-Verbose "VTY 0 4 logging synchronous is disabled.  Enabled for clearer console output."
+    Write-Verbose "Logging synchronous is disabled.  Enabled for clearer console output."
 }
 
-Write-Output "`n`tExec timeout - min:$($VtyData.Vty0_4ExecTimeMin) sec:$($VtyData.Vty0_4ExecTimeSec)"
-Write-Output "`tPassword - $($VtyData.Vty0_4Password)"
-Write-Output "`tLogin local - $($VtyData.Vty0_4LoginLocal)"
-Write-Output "`tACL - $($VtyData.Vty0_4AclIn)"
-Write-Output "`tTransport preferred - $($VtyData.Vty0_4TransportPref)"
-Write-Output "`tTransport output - $($VtyData.Vty0_4TransportOut)"
-Write-Output "`tTransport input - $($VtyData.Vty0_4TransportIn)"
+$VTY0_4_execTimeoutTotal = [int]$VtyData.Vty0_4ExecTimeMin * 60 + ($VtyData.Vty0_4ExecTimeSec)
 
+# check if the idle session timeout is 20 minutes or less
+if (!$VtyData.Vty0_4ExecTimeMin) {
+    Write-Output "`tPASS`tDefault timeout set (10 minutes)"
+} elseif ($Vty0_4_execTimeoutTotal -gt 1200) {
+    Write-Output "`tFAIL`t$($Vty0_4_execTimeoutTotal) seconds exceeds the max allowed timeout (20 minutes)"
+} else {
+    Write-Output "`tPASS`t$($Vty0_4_execTimeoutTotal) seconds is less than the max allowed timeout (20 minutes)"
+}
+
+# check if remote access authentication uses the local user database
+if ($VtyData.Vty0_4LoginLocal) {
+    Write-Output "`tPASS`tLocal user account database required for remote access"
+    
+    if ($VtyData.Vty0_4Password) {
+        Write-Output "`tWARNING`tThe 'login local' and 'password' commands are both set"
+        Write-Verbose "If both commands are set the 'login local' command overrides 'password' and is not used. If the 'login local' command is replaced with the 'login' command user authentication from the local database will no longer be used and the password set via the 'password' command will be active.  Remove the 'password' command using 'no' variant."
+    }
+} elseif ($VtyData.Vty0_4Login) {
+    if ($VtyData.Vty0_4Password) {
+        Write-Output "`tFAIL`tUnique remote user authentication is not enabled"
+        Write-Verbose "The 'login' command must be replaced with the 'login local' command to authenticate against the local user database.  The 'password' command should be removed using the 'no' variant."
+    } else {
+        Write-Output "`tFAIL`tRemote authentication is disabled but the 'login' command is set"
+        Write-Verbose "The 'login' command must be replaced with the 'login local' command."
+    }
+}
+
+# check if an ACL is applied to restrict remote access to specified IPs
+if ($VtyData.Vty0_4AclIn) {
+    Write-Output "`tPASS`tRemote access restricted to the $($VtyData.Vty0_4AclIn) ACL configuration"
+} elseif ($VtyData.Vty0_4TransportIn -like "none") {
+    Write-Output "`tPASS`tRemote access is disabled, implement an ACL if enabled"
+} else {
+    Write-Output "`tFAIL`tImplement an ACL to restrict remote access to authorized IPs/subnets"
+    Write-Verbose "To limit remote access create an ACL and run the 'access-class <ACL> in' command on the VTY lines"
+}
+
+# check the transport input setting
+if ($VtyData.Vty0_4TransportIn -like "ssh") {
+    Write-Output "`tPASS`tRemote access is restricted to SSH"
+} elseif ($VtyData.Vty0_4TransportIn -like "none") {
+    Write-Output "`tPASS`tRemote access is explicity denied"
+} elseif (!$VtyData.Vty0_4TransportIn) {
+    Write-Output "`tFAIL`tRemote access is not configured, restrict to SSH"
+} else {
+    Write-Output "`tFAIL`tRemote access is set to $($VtyData.Vty0_4TransportIn), restrict to SSH"
+}
+
+# check the transport output setting
+if ($VtyData.Vty0_4TransportOut -like "ssh") {
+    Write-Output "`tPASS`tRemote outbound connections are restricted to SSH"
+} elseif (!$VtyData.Vty0_4TransportOut) {
+    Write-Output "`tWARNING`tRemote outbound connections are not configured, restrict to SSH"
+} else {
+    Write-Output "`tWARNING`tRemote outbound connections are set to use $($VtyData.Vty0_4TransportOut), restrict to SSH"
+}
+
+# check the transport preferred setting
+if (!$VtyData.Vty0_4TransportPref -and !$VtyData.Vty0_4TransportIn) {
+    Write-Output "`tWARNING`tTransport preferred is set to the default (telnet)"
+    Write-Verbose "The transport preferred setting controls which protocol is used if it is not explicitly set. To avoid inadvertant telnet connections set the transport to 'none', 'ssh', or explicity set the transport input/output."
+} elseif ($VtyData.Vty0_4TransportPref -like "telnet") {
+    Write-Output "`tWARNING`tTransport preferred is set to telnet"
+    Write-Verbose "The transport preferred setting controls which protocol is used if it is not explicitly set. Set this to 'none', 'ssh', or explicity set the transport input/output."
+} elseif ($VtyData.Vty0_4TransportPref) {
+    Write-Output "`tPASS`tTransport preferred is set to $($VtyData.Vty0_4TransportPref)"
+}
+
+###############################################
+############## VTY 5 15 ANALYSIS ##############
+###############################################
 
 Write-Output "`n`tVTY LINE 5 15"
 
 if ($VtyData.Vty5_15LoggingSync) {
-    Write-Verbose "VTY LINE 5 15 logging synchronous is enabled"
+    Write-Verbose "Logging synchronous is enabled"
 } else {
-    Write-Verbose "VTY LINE 5 15 logging synchronous is disabled.  Enabled for clearer console output."
+    Write-Verbose "Logging synchronous is disabled.  Enabled for clearer console output."
 }
 
-$VTY5_15_execTimeoutTotal = $VtyData.Vty5_15ExecTimeMin * 60 + $VtyData.Vty5_15ExecTimeSec
+$VTY5_15_execTimeoutTotal = [int]$VtyData.Vty5_15ExecTimeMin * 60 + ($VtyData.Vty5_15ExecTimeSec)
 
+# check if the idle session timeout is 20 minutes or less
 if (!$VtyData.Vty5_15ExecTimeMin) {
-    Write-Output "`n`tPASS`tVTY LINE 5 15 set to default exec timeout (10 minutes)"
+    Write-Output "`tPASS`tDefault timeout set (10 minutes)"
 } elseif ($Vty5_15_execTimeoutTotal -gt 1200) {
-    Write-Output "`n`tFAIL`tVTY LINE 5 15 exec timeout of $($Vty5_15_execTimeoutTotal) seconds exceeds the maximum allowed of 1200 seconds (20 minutes)"
+    Write-Output "`tFAIL`t$($Vty5_15_execTimeoutTotal) seconds exceeds the max allowed timeout (20 minutes)"
 } else {
-    Write-Output "`n`tPASS`tVTY LINE 5 15 exec timeout of $($Vty5_15_execTimeoutTotal) seconds is within the maximum allowed of 1200 seconds (20 minutes)"
+    Write-Output "`tPASS`t$($Vty5_15_execTimeoutTotal) seconds is less than the max allowed timeout (20 minutes)"
 }
 
-$Properties.Add('Vty5_15Login',$true)
+# check if remote access authentication uses the local user database
+if ($VtyData.Vty5_15LoginLocal) {
+    Write-Output "`tPASS`tLocal user account database required for remote access"
+    
+    if ($VtyData.Vty5_15Password) {
+        Write-Output "`tWARNING`tThe 'login local' and 'password' commands are both set"
+        Write-Verbose "If both commands are set the 'login local' command overrides 'password' and is not used. If the 'login local' command is replaced with the 'login' command user authentication from the local database will no longer be used and the password set via the 'password' command will be active.  Remove the 'password' command using 'no' variant."
+    }
+} elseif ($VtyData.Vty5_15Login) {
+    if ($VtyData.Vty5_15Password) {
+        Write-Output "`tFAIL`tUnique remote user authentication is not enabled"
+        Write-Verbose "The 'login' command must be replaced with the 'login local' command to authenticate against the local user database.  The 'password' command should be removed using the 'no' variant."
+    } else {
+        Write-Output "`tFAIL`tRemote authentication is disabled but the 'login' command is set"
+        Write-Verbose "The 'login' command must be replaced with the 'login local' command."
+    }
+}
 
-Write-Output "`tPassword - $($VtyData.Vty5_15Password)"
-Write-Output "`tLogin local - $($VtyData.Vty5_15LoginLocal)"
-Write-Output "`tACL - $($VtyData.Vty5_15AclIn)"
-Write-Output "`tTransport preferred - $($VtyData.Vty5_15TransportPref)"
-Write-Output "`tTransport output - $($VtyData.Vty5_15TransportOut)"
-Write-Output "`tTransport input - $($VtyData.Vty5_15TransportIn)"
+# check if an ACL is applied to restrict remote access to specified IPs
+if ($VtyData.Vty5_15AclIn) {
+    Write-Output "`tPASS`tRemote access restricted to the $($VtyData.Vty5_15AclIn) ACL configuration"
+} elseif ($VtyData.Vty5_15TransportIn -like "none") {
+    Write-Output "`tPASS`tRemote access is disabled, implement an ACL if enabled"
+} else {
+    Write-Output "`tFAIL`tImplement an ACL to restrict remote access to authorized IPs/subnets"
+    Write-Verbose "To limit remote access create an ACL and run the 'access-class <ACL> in' command on the VTY lines"
+}
+
+# check the transport input setting
+if ($VtyData.Vty5_15TransportIn -like "ssh") {
+    Write-Output "`tPASS`tRemote access is restricted to SSH"
+} elseif ($VtyData.Vty5_15TransportIn -like "none") {
+    Write-Output "`tPASS`tRemote access is explicity denied"
+} elseif (!$VtyData.Vty5_15TransportIn) {
+    Write-Output "`tFAIL`tRemote access is not configured, restrict to SSH"
+} else {
+    Write-Output "`tFAIL`tRemote access is set to $($VtyData.Vty5_15TransportIn), restrict to SSH"
+}
+
+# check the transport output setting
+if ($VtyData.Vty5_15TransportOut -like "ssh") {
+    Write-Output "`tPASS`tRemote outbound connections are restricted to SSH"
+} elseif (!$VtyData.Vty5_15TransportOut) {
+    Write-Output "`tWARNING`tRemote outbound connections are not configured, restrict to SSH"
+} else {
+    Write-Output "`tWARNING`tRemote outbound connections are set to use $($VtyData.Vty5_15TransportOut), restrict to SSH"
+}
+
+# check the transport preferred setting
+if (!$VtyData.Vty5_15TransportPref -and !$VtyData.Vty5_15TransportIn) {
+    Write-Output "`tWARNING`tTransport preferred is set to the default (telnet)"
+    Write-Verbose "The transport preferred setting controls which protocol is used if it is not explicitly set. To avoid inadvertant telnet connections set the transport to 'none', 'ssh', or explicity set the transport input/output."
+} elseif ($VtyData.Vty5_15TransportPref -like "telnet") {
+    Write-Output "`tWARNING`tTransport preferred is set to telnet"
+    Write-Verbose "The transport preferred setting controls which protocol is used if it is not explicitly set. Set this to 'none', 'ssh', or explicity set the transport input/output."
+} elseif ($VtyData.Vty5_15TransportPref) {
+    Write-Output "`tPASS`tTransport preferred is set to $($VtyData.Vty5_15TransportPref)"
+}
 
 
 ###############################################
@@ -903,6 +1135,7 @@ if ($AccessTrunk.trunkNativeVlans.Count -gt 0) {
         display offending interfaces for access vlan 1
         display offending interfaces for no sticky ports
         snmpv3 checks
+            regex: ^snmp-server group (.+) v3 priv
             snmp-server group (group) v3 priv 
             snmp-server group (group) v3 priv read (view)
             snmp-server group (group) v3 priv write (view)
