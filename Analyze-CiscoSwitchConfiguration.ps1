@@ -14,9 +14,9 @@
 
     This can be used to analyze multiple configs saved in a single directory
 .NOTES
-    Version 1.0.5
+    Version 1.0.6
     Sam Pursglove
-    Last modified: 07 MAR 2019
+    Last modified: 13 MAR 2019
 #>
 
 [CmdletBinding()]
@@ -82,6 +82,10 @@ function Extract-InterfaceSection {
                     $Properties.Add('InterfaceType','Vlan')
                     $Properties.Add('InterfaceNumber',$Matches[1])
                 
+                } elseif ($_ -match "no ip address$") {
+                    
+                    $Properties.Add('NoIpAddress',$true)
+
                 } elseif ($_ -match "switchport mode (access|trunk)$") {
                     
                     $Properties.Add('Mode',$Matches[1])
@@ -629,9 +633,11 @@ $CiscoConfig = @{
     snmpV2ReadOnly=         Search-ConfigQuietly  "^snmp-server community .+ RO"                    $Config.noInterfaces
     snmpV2ReadOnlyAcl=      Search-ConfigForValue "^snmp-server community .+ RO (.*)$"              $Config.noInterfaces
     snmpV2ReadWrite=        Search-ConfigQuietly  "^snmp-server community .+ RW"                    $Config.noInterfaces
+    snmpV3Group=            Search-ConfigForValue "^snmp-server group (.+) v3 priv"                 $Config.noInterfaces
     httpMgmtInterface=      Search-ConfigQuietly  "^ip http server$"                                $Config.noInterfaces
     ntpServer=              Search-ConfigForValue "^ntp server (\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3})"   $Config.noInterfaces
-
+    syslogServer=           Search-ConfigForValue "logging (\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3})"       $Config.noInterfaces
+    accessControlLists=     Search-ConfigForValue "^ip access-list \w+ (.+)"                        $Config.noInterfaces
     aaaAuthLocalEnabled=    Search-ConfigQuietly  "^aaa authentication login default local"         $Config.noInterfaces
     aaaAuthTacacsEnabled=   Search-ConfigQuietly  "^aaa authentication login default group tacacs+" $Config.noInterfaces
     tacacsServer=           Search-ConfigQuietly  "^tacacs-server host"                             $Config.noInterfaces
@@ -700,6 +706,19 @@ if ($CiscoConfig.ntpServer.Length -gt 0) {
     Write-Verbose "Configure at least one NTP server using the 'ntp server <server_ip_address>' command"
 }
 
+# check for syslog server configuration
+if ($CiscoConfig.syslogServer.Length -gt 0) {
+    Write-Output "`tPASS`t`tSyslog server(s):"
+  
+    foreach ($server in $CiscoConfig.syslogServer) {
+        Write-Output "`t`t`t`t  $($server)"
+    }
+} else {
+
+    Write-Output "`tFAIL`t`tNo syslog servers are configured"
+    Write-Verbose "Configure at least one syslog server using the 'logging <server_ip_address>' command"
+}
+
 # check is aaa is enabled
 if ($CiscoConfig.aaaNewModel) {
     Write-Output "`tENABLED`t`tAuthentication, Authorization, and Accounting (AAA)"
@@ -748,9 +767,9 @@ if ($CiscoConfig.loginBanner) {
     Write-Verbose "The configuration does not include a login and/or motd banner.  Add the approved warning banner text."
 }
 
-##################
-##### SNMPv2 #####
-##################
+#######################
+##### SNMPv2 & v3 #####
+#######################
 
 # check if SNMPv2 RO strings are used with or without an ACL
 if ($CiscoConfig.snmpV2ReadOnly) {
@@ -768,6 +787,19 @@ if ($CiscoConfig.snmpV2ReadWrite) {
     Write-Verbose "SNMPv2 is an unencrypted protocol and the cleartext can be sniffed on the network.  If read-write strings are required these should be enabled using SNMPv3 with the appropriate authentication and encryption configured."
 } else {
     Write-Output "`tPASS`t`tSNMPv2 Read-Write (RW) community strings are not used"
+}
+
+# check for SNMPv3 configuration
+if ($CiscoConfig.snmpV3Group.Length -gt 0) {
+    Write-Output "`tPASS`t`tSNMPv3 Group(s) configured for encryption and authentication (authPriv)"
+  
+    foreach ($group in $CiscoConfig.snmpV3Group) {
+        Write-Output "`t`t`t`t  $($group)"
+    }
+} else {
+
+    Write-Output "`tFAIL`t`tNo SNMPv3 groups are configured for encryption and authentication (authPriv)"
+    Write-Verbose "To configure the SNMPv3 security mechanism, you link an SNMP view to a group and then link users to that group; the users define what authentication and encryption will be used."
 }
 
 
@@ -1101,6 +1133,15 @@ Write-Output "`t`tAccess ports:`t$($AccessTrunk.CountAccess)"
 Write-Output "`t`tTrunk ports:`t$($AccessTrunk.CountTrunkInterfaces)"
 Write-Output "`t`tPortFast ports: $($SpanningTreeInterfaceConfig.portFastCount)`n"
 
+# display the names of any standard or extended ACLs
+if ($CiscoConfig.accessControlLists.Length -gt 0) {
+    Write-Output "`tConfigured standard or extended ACLs"
+  
+    foreach ($acl in $CiscoConfig.accessControlLists) {
+        Write-Output "`t`t$($acl)"
+    }
+}
+
 # print the summary of access vlans
 if ($AccessTrunk.accessVlans.Count -gt 0) {
     $AccessTrunk.accessVlans.GetEnumerator() | 
@@ -1128,19 +1169,12 @@ if ($AccessTrunk.trunkNativeVlans.Count -gt 0) {
     Write-Output ""
 }
 
+
 <#
     TODO:
         trunk native VLAN
             switchport trunk native vlan xxxx
         display offending interfaces for access vlan 1
         display offending interfaces for no sticky ports
-        snmpv3 checks
-            regex: ^snmp-server group (.+) v3 priv
-            snmp-server group (group) v3 priv 
-            snmp-server group (group) v3 priv read (view)
-            snmp-server group (group) v3 priv write (view)
-            snmp-server group (group) v3 priv read (view) write (view)
         list VLAN used and their name
-        list ACL type (standard, extended, named) and name/number
-            ip access-list standard (name/number)
 #>
