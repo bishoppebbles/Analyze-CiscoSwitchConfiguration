@@ -5,6 +5,10 @@
     This script parses a plain text formatted Cisco switch configuration file and checks for specific security configuration entries.  It displays whether certain configuration requirements pass or fail the check.
 .PARAMETER ConfigFile
     The saved Cisco switch configuration file
+.PARAMETER FailOnly
+    Outputs failed tests only; tests that pass or provide a warning are not displayed
+.PARAMETER FailWarningOnly
+    Outputs failed tests and warnings only; tests that pass are not displayed
 .EXAMPLE
     Analyze-CiscoSwitchConfiguration.ps1 -ConfigFile cisco_config.txt
 
@@ -14,23 +18,28 @@
 
     This can be used to analyze multiple configs saved in a single directory
 .NOTES
-    Version 1.0.6
+    Version 1.0.7
     Sam Pursglove
-    Last modified: 13 MAR 2019
+    Last modified: 14 MAR 2019
 #>
 
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName='FailOnly')]
 param (
 
     [Parameter(Position=0, Mandatory=$true, ValueFromPipeline=$false, HelpMessage='The saved config file of a Cisco switch')]
-    [string]$ConfigFile
+    [string]$ConfigFile,
+
+    [Parameter(ParameterSetName='FailOnly', Mandatory=$false, ValueFromPipeline=$false, HelpMessage='Only display failed tests')]
+    [switch]$FailOnly,
+
+    [Parameter(ParameterSetName='FailWarningOnly', Mandatory=$false, ValueFromPipeline=$false, HelpMessage='Only display failed tests and warnings')]
+    [switch]$FailWarningOnly
 )
 
 
 ###############################################
 ################## FUNCTIONS ##################
 ###############################################
-
 
 # searches the config and returns the value(s) of interest if they are found
 function Search-ConfigForValue {
@@ -651,25 +660,33 @@ $CiscoConfig = @{
 
 
 # check if a version of older than Cisco IOS 15 is being used
-if ([single]$version -ge $MinimumIosVersion) {
-    Write-Output "`tPASS`t`tCisco IOS version 15 or newer is in use"
-    Write-Verbose "Regularly check for IOS updates and patch the operating system."
+if ([single]$version -ge $MinimumIosVersion) {    
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`t`tCisco IOS version 15 or newer is in use"
+        Write-Verbose "Regularly check for IOS updates and patch the operating system."
+    }
 } else {
-    Write-Output "`tWARNING`t`tCisco IOS may be outdated"
-    Write-Verbose "IOS may be outdated. Please check for operating system updates and compatibility with version 15 or higher."
+    if (!$FailOnly) {
+        Write-Output "`tWARNING`t`tCisco IOS may be outdated"
+        Write-Verbose "IOS may be outdated. Please check for operating system updates and compatibility with version 15 or higher."
+    }
 }
 
 # check if the 'service password encryption' command has been used
-if ($CiscoConfig.servicePasswordEncrypt) {
-    Write-Output "`tENABLED`t`tService password encryption"
-} else {
-    Write-Output "`tDISABLED`tService password encryption"
-    Write-Verbose "Enable the 'service password-encryption' command if other stronger forms of encryption are not available. This encryption is reversible."
+if (!$FailOnly) {
+    if ($CiscoConfig.servicePasswordEncrypt) {
+        Write-Output "`tENABLED`t`tService password encryption"
+    } else {
+        Write-Output "`tDISABLED`tService password encryption"
+        Write-Verbose "Enable the 'service password-encryption' command if other stronger forms of encryption are not available. This encryption is reversible."
+    }
 }
 
 # check if the enable password is configured with a stronger form of encryption
 if ($CiscoConfig.enableSecret) {
-    Write-Output "`tPASS`t`tEnable secret password configured"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`t`tEnable secret password configured"
+    }
 } elseif ($CiscoConfig.enablePassword) {
     Write-Output "`tFAIL`t`tEnable secret password configured"
     Write-Verbose "The privileged enable account is password protected using a weak encryption method. Configure the account using the 'enable secret' command."
@@ -680,9 +697,11 @@ if ($CiscoConfig.enableSecret) {
 
 # check for local user accounts
 if ($CiscoConfig.userAccountsSecret.Length -gt 0) {
-    Write-Output "`tPASS`t`tLocal accounts with secret password encryption:"
-    foreach ($user in $CiscoConfig.userAccountsSecret) {
-        Write-Output "`t`t`t`t  $user"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`t`tLocal accounts with secret password encryption:"
+        foreach ($user in $CiscoConfig.userAccountsSecret) {
+            Write-Output "`t`t`t`t  $user"
+        }
     }
 }
 if ($CiscoConfig.userAccountsPassword.Length -gt 0) {
@@ -695,10 +714,12 @@ if ($CiscoConfig.userAccountsPassword.Length -gt 0) {
 
 # check for NTP server configuration
 if ($CiscoConfig.ntpServer.Length -gt 0) {
-    Write-Output "`tPASS`t`tNTP server(s):"
+   if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`t`tNTP server(s):"
   
-    foreach ($server in $CiscoConfig.ntpServer) {
-        Write-Output "`t`t`t`t  $($server)"
+        foreach ($server in $CiscoConfig.ntpServer) {
+            Write-Output "`t`t`t`t  $($server)"
+        }
     }
 } else {
 
@@ -708,10 +729,12 @@ if ($CiscoConfig.ntpServer.Length -gt 0) {
 
 # check for syslog server configuration
 if ($CiscoConfig.syslogServer.Length -gt 0) {
-    Write-Output "`tPASS`t`tSyslog server(s):"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`t`tSyslog server(s):"
   
-    foreach ($server in $CiscoConfig.syslogServer) {
-        Write-Output "`t`t`t`t  $($server)"
+        foreach ($server in $CiscoConfig.syslogServer) {
+            Write-Output "`t`t`t`t  $($server)"
+        }
     }
 } else {
 
@@ -720,10 +743,12 @@ if ($CiscoConfig.syslogServer.Length -gt 0) {
 }
 
 # check is aaa is enabled
-if ($CiscoConfig.aaaNewModel) {
-    Write-Output "`tENABLED`t`tAuthentication, Authorization, and Accounting (AAA)"
-} else {
-    Write-Output "`tDISABLED`tAuthentication, Authorization, and Accounting (AAA)"
+if (!$FailOnly) {
+    if ($CiscoConfig.aaaNewModel) {
+        Write-Output "`tENABLED`t`tAuthentication, Authorization, and Accounting (AAA)"
+    } else {
+        Write-Output "`tDISABLED`tAuthentication, Authorization, and Accounting (AAA)"
+    }
 }
 
 ##################
@@ -732,7 +757,9 @@ if ($CiscoConfig.aaaNewModel) {
 
 # check if SSH v2 is enabled
 if ($CiscoConfig.sshV2) {
-    Write-Output "`tPASS`t`tSSH v2 enabled"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`t`tSSH v2 enabled"
+    }
 } else {
     Write-Output "`tFAIL`t`tSSH v2 not enabled"
     Write-Verbose "SSH v2 should be enabled using the 'ip ssh version 2' command"
@@ -740,9 +767,13 @@ if ($CiscoConfig.sshV2) {
 
 # check if SSH authentication retries is greater than 3 (if not configured that's the default, the max allowed is 5)
 if (!$CiscoConfig.sshAuthRetry) {
-    Write-Output "`tPASS`t`tSSH authentication retries uses the default setting (3 retries)"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`t`tSSH authentication retries uses the default setting (3 retries)"
+    }
 } elseif ($CiscoConfig.sshAuthRetry -le 3) {
-    Write-Output "`tPASS`t`tSSH authentication retries set to $($CiscoConfig.sshAuthRetry)"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`t`tSSH authentication retries set to $($CiscoConfig.sshAuthRetry)"
+    }
 } elseif ($CiscoConfig.sshAuthRetry -gt 3) {
     Write-Output "`tFAIL`t`tSSH authentication retries exceeds the maximum allowed of 3"
     Write-Verbose "The default number of SSH authentication retries is 3. There is no need to set this command for compliance."
@@ -751,17 +782,23 @@ if (!$CiscoConfig.sshAuthRetry) {
 # check if SSH authentication is set to 120 sec or less
 # this test cannot fail as that is the default setting and also the max but it's included for completeness
 if (!$CiscoConfig.sshTimeout) {
-    Write-Output "`tPASS`t`tSSH authentication timeout set to the default (120 seconds)"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`t`tSSH authentication timeout set to the default (120 seconds)"
+    }
 } elseif ($CiscoConfig.sshTimeout) {
-    Write-Output "`tPASS`t`tSSH authentication timeout set to $($CiscoConfig.sshTimeout) second(s)"
-    Write-Verbose "The default SSH authentication timeout is 120 seconds, the maximum SSH authentication timeout is 120 seconds.  This requirement cannot fail."
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`t`tSSH authentication timeout set to $($CiscoConfig.sshTimeout) second(s)"
+        Write-Verbose "The default SSH authentication timeout is 120 seconds, the maximum SSH authentication timeout is 120 seconds.  This requirement cannot fail."
+    }
 }
 
 
 # check if a login banner message is used
 if ($CiscoConfig.loginBanner) {
-    Write-Output "`tPASS`t`tA $($CiscoConfig.loginBanner) banner is configured"
-    Write-Verbose "The configuration contains a $($CiscoConfig.loginBanner) banner.  Ensure the message conforms to the required warning banner text."
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`t`tA $($CiscoConfig.loginBanner) banner is configured"
+        Write-Verbose "The configuration contains a $($CiscoConfig.loginBanner) banner.  Ensure the message conforms to the required warning banner text."
+    }
 } else {
     Write-Output "`tFAIL`t`tA login and/or motd banner is not configured"
     Write-Verbose "The configuration does not include a login and/or motd banner.  Add the approved warning banner text."
@@ -776,9 +813,13 @@ if ($CiscoConfig.snmpV2ReadOnly) {
     Write-Output "`tFAIL`t`tSNMPv2 Read-Only (RO) community strings are enabled"
     Write-Verbose "SNMPv2 is an unencrypted protocol and the cleartext can be sniffed on the network.  If it must be used restrict access to the read-only strings with an access control list (ACL)."
 } elseif ($CiscoConfig.snmpV2ReadOnly -and $CiscoConfig.snmpV2ReadOnlyAcl) {
-    Write-Output "`tPASS`t`tSNMPv2 Read-Only (RO) community string is enabled and restricted with an access control list (ACL)"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`t`tSNMPv2 Read-Only (RO) community string is enabled and restricted with an access control list (ACL)"
+    }
 } else {
-    Write-Output "`tPASS`t`tSNMPv2 Read-Only (RO) community strings are not used"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`t`tSNMPv2 Read-Only (RO) community strings are not used"
+    }
 }
 
 # check if SNMPv2 RW strings are used
@@ -786,15 +827,19 @@ if ($CiscoConfig.snmpV2ReadWrite) {
     Write-Output "`tFAIL`t`tSNMPv2 Read-Write (RW) community strings are enabled"
     Write-Verbose "SNMPv2 is an unencrypted protocol and the cleartext can be sniffed on the network.  If read-write strings are required these should be enabled using SNMPv3 with the appropriate authentication and encryption configured."
 } else {
-    Write-Output "`tPASS`t`tSNMPv2 Read-Write (RW) community strings are not used"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`t`tSNMPv2 Read-Write (RW) community strings are not used"
+    }
 }
 
 # check for SNMPv3 configuration
 if ($CiscoConfig.snmpV3Group.Length -gt 0) {
-    Write-Output "`tPASS`t`tSNMPv3 Group(s) configured for encryption and authentication (authPriv)"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`t`tSNMPv3 Group(s) configured for encryption and authentication (authPriv)"
   
-    foreach ($group in $CiscoConfig.snmpV3Group) {
-        Write-Output "`t`t`t`t  $($group)"
+        foreach ($group in $CiscoConfig.snmpV3Group) {
+            Write-Output "`t`t`t`t  $($group)"
+        }
     }
 } else {
 
@@ -808,7 +853,9 @@ if ($CiscoConfig.httpMgmtInterface) {
     Write-Output "`tFAIL`t`tThe HTTP web management server is enabled"
     Write-Verbose "HTTP is an unencrypted protocol and the cleartext can be sniffed on the network. If a web management interface is required enable the HTTPS version using the 'ip http secure-server' command."
 } else {
-    Write-Output "`tPASS`t`tThe HTTP web management server is disabled"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`t`tThe HTTP web management server is disabled"
+    }
 }
 
 
@@ -817,7 +864,9 @@ if ($AccessTrunk.CountVlan1 -gt 0) {
     Write-Output "`tFAIL`t`tThere are $($AccessTrunk.countVlan1) interface(s) configured for access VLAN 1"
     Write-Verbose "All access ports should use a VLAN other than VLAN 1"
 } else {
-    Write-Output "`tPASS`t`tAll access ports use an access VLAN other than VLAN 1"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`t`tAll access ports use an access VLAN other than VLAN 1"
+    }
 }
 
 
@@ -826,7 +875,7 @@ if ($PortSecurityMaxCount.Count -gt 0) {
     Write-Output "`tFAIL`t`tYou have $($PortSecurityMaxCount.Count) interface(s) that allow more than one MAC address on an interface for port-security"
     $PortSecurityMaxCount | 
         ForEach-Object {
-            Write-Output "`t`t`t`t`t$_"
+            Write-Output "`t`t`t`t  $_"
         }
 }
 
@@ -835,41 +884,51 @@ if ($NonSticky.Count -gt 0) {
     Write-Output "`tFAIL`t`tYou have $($NonSticky.Count) enabled access interface(s) without sticky port port-security configured"
     $NonSticky |
         ForEach-Object {
-            Write-Output "`t`t`t`t`t$_"
+            Write-Output "`t`t`t`t  $_"
         }
 } else {
-    Write-Output "`tPASS`t`tAll enabled interface(s) are configured with sticky port port-security"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`t`tAll enabled interface(s) are configured with sticky port port-security"
+    }
 }
 
 # diplays interfaces if they are misconfigured using both access and trunk commands
 if ($AccessTrunk.misconfig.Count -gt 0) {
-    Write-Output "`tWARNING`t`tYou have $($AccessTrunk.misconfig.Count) interface(s) configured with access and trunk settings"
-    $AccessTrunk.misconfig | 
-        ForEach-Object {
-            Write-Output "`t`t`t`t`t$_"
-        }
-    Write-Verbose "An interface should be configured for access or trunk mode, but not both."
+    if (!$FailOnly) {
+        Write-Output "`tWARNING`t`tYou have $($AccessTrunk.misconfig.Count) interface(s) configured with access and trunk settings"
+        $AccessTrunk.misconfig | 
+            ForEach-Object {
+                Write-Output "`t`t`t`t  $_"
+            }
+        Write-Verbose "An interface should be configured for access or trunk mode, but not both."
+    }
 }
 
 # check if the duplex setting is not set to autoconfiguration (i.e., it's set to full/half)
 if ($DuplexConfig.ContainsKey('full')) {
-    Write-Output "`tWARNING`t`tThere is/are $($DuplexConfig['full']) interface(s) configured as full duplex"
-    Write-Verbose "An autoconfiguration duplex setting is recommended."
+    if (!$FailOnly) {
+        Write-Output "`tWARNING`t`tThere is/are $($DuplexConfig['full']) interface(s) configured as full duplex"
+        Write-Verbose "An autoconfiguration duplex setting is recommended."
+    }
 }
 
 if ($DuplexConfig.ContainsKey('half')) {
-    Write-Output "`tWARNING`t`tThere is/are $($DuplexConfig['half']) interface(s) configured as half duplex"
-    Write-Verbose "An autoconfiguration duplex setting is recommended."
+    if (!$FailOnly) {
+        Write-Output "`tWARNING`t`tThere is/are $($DuplexConfig['half']) interface(s) configured as half duplex"
+        Write-Verbose "An autoconfiguration duplex setting is recommended."
+    }
 }
 
 # diplays interfaces that are misconfigured if they have both BPDUGuard and BPDUFilter enabled
 if ($SpanningTreeInterfaceConfig.bpduGuardFilterEnabled.Count -gt 0) {
-    Write-Output "`tWARNING`t`tYou have $($SpanningTreeInterfaceConfig.bpduGuardFilterEnabled.Count) interface(s) configured with both BPDUGuard and BPDUFilter"
-    $SpanningTreeInterfaceConfig.bpduGuardFilterEnabled |
-        ForEach-Object {
-            Write-Output "`t`t`t`t`t$_"
-        }
-    Write-Verbose "BPDUGuard and BDPUFilter are mutually exclusive spanning-tree features.  If they are configured on the same interface BPDUGuard is effectivley disabled and BPDUFilter will stay operational.  It is a recommended practice to configure each access port with PortFast and BPDUGuard, disable BPDUFilter."
+    if (!$FailOnly) {
+        Write-Output "`tWARNING`t`tYou have $($SpanningTreeInterfaceConfig.bpduGuardFilterEnabled.Count) interface(s) configured with both BPDUGuard and BPDUFilter"
+        $SpanningTreeInterfaceConfig.bpduGuardFilterEnabled |
+            ForEach-Object {
+                Write-Output "`t`t`t`t  $_"
+            }
+        Write-Verbose "BPDUGuard and BDPUFilter are mutually exclusive spanning-tree features.  If they are configured on the same interface BPDUGuard is effectivley disabled and BPDUFilter will stay operational.  It is a recommended practice to configure each access port with PortFast and BPDUGuard, disable BPDUFilter."
+    }
 }
 
 
@@ -880,14 +939,18 @@ if ($SpanningTreeInterfaceConfig.bpduGuardFilterEnabled.Count -gt 0) {
 Write-Output "`n`tINTERFACE VLAN1"
 
 if ($IntVlan1Data.IntVlan1NoIp) {
-    Write-Output "`tPASS`tNo IP address is assigned to interface Vlan1"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`tNo IP address is assigned to interface Vlan1"
+    }
 } else {
     Write-Output "`tFAIL`tInterface Vlan1 has an assigned IP address"
     Write-Verbose "Vlan1 must not be used. Remove the IP address assigned to Vlan1."
 }
 
 if ($IntVlan1Data.IntVlan1Shut) {
-    Write-Output "`tPASS`tVlan1 interface is shutdown"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`tVlan1 interface is shutdown"
+    }
 } else {
     Write-Output "`tFAIL`tShutdown the Vlan1 interface"
     Write-Verbose "Vlan1 must not be used. The interface should be explicitly shutdown."
@@ -910,20 +973,28 @@ $ConsoleExecTimeoutTotal = [int]$ConsoleData.ConExecTimeMin * 60 + $ConsoleData.
 
 # check if the idle console session timeout is 10 minutes or less
 if (!$ConsoleData.ConExecTimeMin) {
-    Write-Output "`tPASS`tDefault timeout set (10 minutes)"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`tDefault timeout set (10 minutes)"
+    }
 } elseif ($ConsoleExecTimeoutTotal -gt 600) {
     Write-Output "`tFAIL`t$($ConsoleExecTimeoutTotal) seconds exceeds the max allowed timeout (10 minutes)"
 } else {
-    Write-Output "`tPASS`t$($ConsoleExecTimeoutTotal) seconds is less than the max allowed timeout (10 minutes)"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`t$($ConsoleExecTimeoutTotal) seconds is less than the max allowed timeout (10 minutes)"
+    }
 }
 
 # check if console access authentication uses the local user database
 if ($ConsoleData.ConLoginLocal) {
-    Write-Output "`tPASS`tLocal user account database required for remote access"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`tLocal user account database required for remote access"
+    }
     
     if ($ConsoleData.ConPassword) {
-        Write-Output "`tWARNING`tThe 'login local' and 'password' commands are both set"
-        Write-Verbose "If both commands are set the 'login local' command overrides 'password' and is not used. If the 'login local' command is replaced with the 'login' command user authentication from the local database will no longer be used and the password set via the 'password' command will be active.  Remove the 'password' command using 'no' variant."
+        if (!$FailOnly) {
+            Write-Output "`tWARNING`tThe 'login local' and 'password' commands are both set"
+            Write-Verbose "If both commands are set the 'login local' command overrides 'password' and is not used. If the 'login local' command is replaced with the 'login' command user authentication from the local database will no longer be used and the password set via the 'password' command will be active.  Remove the 'password' command using 'no' variant."
+        }
     }
 } elseif ($ConsoleData.ConLogin) {
     if ($ConsoleData.ConPassword) {
@@ -937,22 +1008,34 @@ if ($ConsoleData.ConLoginLocal) {
 
 # check the transport output setting
 if ($ConsoleData.ConTransportOut -like "ssh") {
-    Write-Output "`tPASS`tRemote outbound connections are restricted to SSH"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`tRemote outbound connections are restricted to SSH"
+    }
 } elseif (!$ConsoleData.ConTransportOut) {
-    Write-Output "`tWARNING`tRemote outbound connections are not configured, restrict to SSH"
+    if (!$FailOnly) {
+        Write-Output "`tWARNING`tRemote outbound connections are not configured, restrict to SSH"
+    }
 } else {
-    Write-Output "`tWARNING`tRemote outbound connections are set to use $($ConsoleData.ConTransportOut), restrict to SSH"
+    if (!$FailOnly) {
+        Write-Output "`tWARNING`tRemote outbound connections are set to use $($ConsoleData.ConTransportOut), restrict to SSH"
+    }
 }
 
 # check the transport preferred setting
 if (!$ConsoleData.ConTransportPref -and !$ConsoleData.ConTransportOut) {
-    Write-Output "`tWARNING`tTransport preferred is set to the default (telnet)"
-    Write-Verbose "The transport preferred setting controls which protocol is used if it is not explicitly set. To avoid inadvertant telnet connections set the transport to 'none', 'ssh', or explicity set the transport output."
+    if (!$FailOnly) {
+        Write-Output "`tWARNING`tTransport preferred is set to the default (telnet)"
+        Write-Verbose "The transport preferred setting controls which protocol is used if it is not explicitly set. To avoid inadvertant telnet connections set the transport to 'none', 'ssh', or explicity set the transport output."
+    }
 } elseif ($ConsoleData.ConTransportPref -like "telnet") {
-    Write-Output "`tWARNING`tTransport preferred is set to telnet"
-    Write-Verbose "The transport preferred setting controls which protocol is used if it is not explicitly set. Set this to 'none', 'ssh', or explicity set the transport output."
+    if (!$FailOnly) {
+        Write-Output "`tWARNING`tTransport preferred is set to telnet"
+        Write-Verbose "The transport preferred setting controls which protocol is used if it is not explicitly set. Set this to 'none', 'ssh', or explicity set the transport output."
+    }
 } elseif ($ConsoleData.ConTransportPref) {
-    Write-Output "`tPASS`tTransport preferred is set to $($ConsoleData.ConTransportPref)"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`tTransport preferred is set to $($ConsoleData.ConTransportPref)"
+    }
 }
 
 
@@ -972,20 +1055,28 @@ $VTY0_4_execTimeoutTotal = [int]$VtyData.Vty0_4ExecTimeMin * 60 + ($VtyData.Vty0
 
 # check if the idle session timeout is 20 minutes or less
 if (!$VtyData.Vty0_4ExecTimeMin) {
-    Write-Output "`tPASS`tDefault timeout set (10 minutes)"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`tDefault timeout set (10 minutes)"
+    }
 } elseif ($Vty0_4_execTimeoutTotal -gt 1200) {
     Write-Output "`tFAIL`t$($Vty0_4_execTimeoutTotal) seconds exceeds the max allowed timeout (20 minutes)"
 } else {
-    Write-Output "`tPASS`t$($Vty0_4_execTimeoutTotal) seconds is less than the max allowed timeout (20 minutes)"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`t$($Vty0_4_execTimeoutTotal) seconds is less than the max allowed timeout (20 minutes)"
+    }
 }
 
 # check if remote access authentication uses the local user database
 if ($VtyData.Vty0_4LoginLocal) {
-    Write-Output "`tPASS`tLocal user account database required for remote access"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`tLocal user account database required for remote access"
+    }
     
     if ($VtyData.Vty0_4Password) {
-        Write-Output "`tWARNING`tThe 'login local' and 'password' commands are both set"
-        Write-Verbose "If both commands are set the 'login local' command overrides 'password' and is not used. If the 'login local' command is replaced with the 'login' command user authentication from the local database will no longer be used and the password set via the 'password' command will be active.  Remove the 'password' command using 'no' variant."
+        if (!$FailOnly) {
+            Write-Output "`tWARNING`tThe 'login local' and 'password' commands are both set"
+            Write-Verbose "If both commands are set the 'login local' command overrides 'password' and is not used. If the 'login local' command is replaced with the 'login' command user authentication from the local database will no longer be used and the password set via the 'password' command will be active.  Remove the 'password' command using 'no' variant."
+        }
     }
 } elseif ($VtyData.Vty0_4Login) {
     if ($VtyData.Vty0_4Password) {
@@ -999,9 +1090,13 @@ if ($VtyData.Vty0_4LoginLocal) {
 
 # check if an ACL is applied to restrict remote access to specified IPs
 if ($VtyData.Vty0_4AclIn) {
-    Write-Output "`tPASS`tRemote access restricted to the $($VtyData.Vty0_4AclIn) ACL configuration"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`tRemote access restricted to the $($VtyData.Vty0_4AclIn) ACL configuration"
+    }
 } elseif ($VtyData.Vty0_4TransportIn -like "none") {
-    Write-Output "`tPASS`tRemote access is disabled, implement an ACL if enabled"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`tRemote access is disabled, implement an ACL if enabled"
+    }
 } else {
     Write-Output "`tFAIL`tImplement an ACL to restrict remote access to authorized IPs/subnets"
     Write-Verbose "To limit remote access create an ACL and run the 'access-class <ACL> in' command on the VTY lines"
@@ -1009,9 +1104,13 @@ if ($VtyData.Vty0_4AclIn) {
 
 # check the transport input setting
 if ($VtyData.Vty0_4TransportIn -like "ssh") {
-    Write-Output "`tPASS`tRemote access is restricted to SSH"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`tRemote access is restricted to SSH"
+    }
 } elseif ($VtyData.Vty0_4TransportIn -like "none") {
-    Write-Output "`tPASS`tRemote access is explicity denied"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`tRemote access is explicity denied"
+    }
 } elseif (!$VtyData.Vty0_4TransportIn) {
     Write-Output "`tFAIL`tRemote access is not configured, restrict to SSH"
 } else {
@@ -1020,22 +1119,34 @@ if ($VtyData.Vty0_4TransportIn -like "ssh") {
 
 # check the transport output setting
 if ($VtyData.Vty0_4TransportOut -like "ssh") {
-    Write-Output "`tPASS`tRemote outbound connections are restricted to SSH"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`tRemote outbound connections are restricted to SSH"
+    }
 } elseif (!$VtyData.Vty0_4TransportOut) {
-    Write-Output "`tWARNING`tRemote outbound connections are not configured, restrict to SSH"
+    if (!$FailOnly) {
+        Write-Output "`tWARNING`tRemote outbound connections are not configured, restrict to SSH"
+    }
 } else {
-    Write-Output "`tWARNING`tRemote outbound connections are set to use $($VtyData.Vty0_4TransportOut), restrict to SSH"
+    if (!$FailOnly) {
+        Write-Output "`tWARNING`tRemote outbound connections are set to use $($VtyData.Vty0_4TransportOut), restrict to SSH"
+    }
 }
 
 # check the transport preferred setting
 if (!$VtyData.Vty0_4TransportPref -and !$VtyData.Vty0_4TransportIn) {
-    Write-Output "`tWARNING`tTransport preferred is set to the default (telnet)"
-    Write-Verbose "The transport preferred setting controls which protocol is used if it is not explicitly set. To avoid inadvertant telnet connections set the transport to 'none', 'ssh', or explicity set the transport input/output."
+    if (!$FailOnly) {
+        Write-Output "`tWARNING`tTransport preferred is set to the default (telnet)"
+        Write-Verbose "The transport preferred setting controls which protocol is used if it is not explicitly set. To avoid inadvertant telnet connections set the transport to 'none', 'ssh', or explicity set the transport input/output."
+    }
 } elseif ($VtyData.Vty0_4TransportPref -like "telnet") {
-    Write-Output "`tWARNING`tTransport preferred is set to telnet"
-    Write-Verbose "The transport preferred setting controls which protocol is used if it is not explicitly set. Set this to 'none', 'ssh', or explicity set the transport input/output."
+    if (!$FailOnly) {
+        Write-Output "`tWARNING`tTransport preferred is set to telnet"
+        Write-Verbose "The transport preferred setting controls which protocol is used if it is not explicitly set. Set this to 'none', 'ssh', or explicity set the transport input/output."
+    }
 } elseif ($VtyData.Vty0_4TransportPref) {
-    Write-Output "`tPASS`tTransport preferred is set to $($VtyData.Vty0_4TransportPref)"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`tTransport preferred is set to $($VtyData.Vty0_4TransportPref)"
+    }
 }
 
 ###############################################
@@ -1054,20 +1165,28 @@ $VTY5_15_execTimeoutTotal = [int]$VtyData.Vty5_15ExecTimeMin * 60 + ($VtyData.Vt
 
 # check if the idle session timeout is 20 minutes or less
 if (!$VtyData.Vty5_15ExecTimeMin) {
-    Write-Output "`tPASS`tDefault timeout set (10 minutes)"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`tDefault timeout set (10 minutes)"
+    }
 } elseif ($Vty5_15_execTimeoutTotal -gt 1200) {
     Write-Output "`tFAIL`t$($Vty5_15_execTimeoutTotal) seconds exceeds the max allowed timeout (20 minutes)"
 } else {
-    Write-Output "`tPASS`t$($Vty5_15_execTimeoutTotal) seconds is less than the max allowed timeout (20 minutes)"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`t$($Vty5_15_execTimeoutTotal) seconds is less than the max allowed timeout (20 minutes)"
+    }
 }
 
 # check if remote access authentication uses the local user database
 if ($VtyData.Vty5_15LoginLocal) {
-    Write-Output "`tPASS`tLocal user account database required for remote access"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`tLocal user account database required for remote access"
+    }
     
     if ($VtyData.Vty5_15Password) {
-        Write-Output "`tWARNING`tThe 'login local' and 'password' commands are both set"
-        Write-Verbose "If both commands are set the 'login local' command overrides 'password' and is not used. If the 'login local' command is replaced with the 'login' command user authentication from the local database will no longer be used and the password set via the 'password' command will be active.  Remove the 'password' command using 'no' variant."
+        if (!$FailOnly) {
+            Write-Output "`tWARNING`tThe 'login local' and 'password' commands are both set"
+            Write-Verbose "If both commands are set the 'login local' command overrides 'password' and is not used. If the 'login local' command is replaced with the 'login' command user authentication from the local database will no longer be used and the password set via the 'password' command will be active.  Remove the 'password' command using 'no' variant."
+        }
     }
 } elseif ($VtyData.Vty5_15Login) {
     if ($VtyData.Vty5_15Password) {
@@ -1081,9 +1200,13 @@ if ($VtyData.Vty5_15LoginLocal) {
 
 # check if an ACL is applied to restrict remote access to specified IPs
 if ($VtyData.Vty5_15AclIn) {
-    Write-Output "`tPASS`tRemote access restricted to the $($VtyData.Vty5_15AclIn) ACL configuration"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`tRemote access restricted to the $($VtyData.Vty5_15AclIn) ACL configuration"
+    }
 } elseif ($VtyData.Vty5_15TransportIn -like "none") {
-    Write-Output "`tPASS`tRemote access is disabled, implement an ACL if enabled"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`tRemote access is disabled, implement an ACL if enabled"
+    }
 } else {
     Write-Output "`tFAIL`tImplement an ACL to restrict remote access to authorized IPs/subnets"
     Write-Verbose "To limit remote access create an ACL and run the 'access-class <ACL> in' command on the VTY lines"
@@ -1091,9 +1214,13 @@ if ($VtyData.Vty5_15AclIn) {
 
 # check the transport input setting
 if ($VtyData.Vty5_15TransportIn -like "ssh") {
-    Write-Output "`tPASS`tRemote access is restricted to SSH"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`tRemote access is restricted to SSH"
+    }
 } elseif ($VtyData.Vty5_15TransportIn -like "none") {
-    Write-Output "`tPASS`tRemote access is explicity denied"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`tRemote access is explicity denied"
+    }
 } elseif (!$VtyData.Vty5_15TransportIn) {
     Write-Output "`tFAIL`tRemote access is not configured, restrict to SSH"
 } else {
@@ -1102,22 +1229,34 @@ if ($VtyData.Vty5_15TransportIn -like "ssh") {
 
 # check the transport output setting
 if ($VtyData.Vty5_15TransportOut -like "ssh") {
-    Write-Output "`tPASS`tRemote outbound connections are restricted to SSH"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`tRemote outbound connections are restricted to SSH"
+    }
 } elseif (!$VtyData.Vty5_15TransportOut) {
-    Write-Output "`tWARNING`tRemote outbound connections are not configured, restrict to SSH"
+    if (!$FailOnly) {
+        Write-Output "`tWARNING`tRemote outbound connections are not configured, restrict to SSH"
+    }
 } else {
-    Write-Output "`tWARNING`tRemote outbound connections are set to use $($VtyData.Vty5_15TransportOut), restrict to SSH"
+    if (!$FailOnly) {
+        Write-Output "`tWARNING`tRemote outbound connections are set to use $($VtyData.Vty5_15TransportOut), restrict to SSH"
+    }
 }
 
 # check the transport preferred setting
 if (!$VtyData.Vty5_15TransportPref -and !$VtyData.Vty5_15TransportIn) {
-    Write-Output "`tWARNING`tTransport preferred is set to the default (telnet)"
-    Write-Verbose "The transport preferred setting controls which protocol is used if it is not explicitly set. To avoid inadvertant telnet connections set the transport to 'none', 'ssh', or explicity set the transport input/output."
+    if (!$FailOnly) {
+        Write-Output "`tWARNING`tTransport preferred is set to the default (telnet)"
+        Write-Verbose "The transport preferred setting controls which protocol is used if it is not explicitly set. To avoid inadvertant telnet connections set the transport to 'none', 'ssh', or explicity set the transport input/output."
+    }
 } elseif ($VtyData.Vty5_15TransportPref -like "telnet") {
-    Write-Output "`tWARNING`tTransport preferred is set to telnet"
-    Write-Verbose "The transport preferred setting controls which protocol is used if it is not explicitly set. Set this to 'none', 'ssh', or explicity set the transport input/output."
+    if (!$FailOnly) {
+        Write-Output "`tWARNING`tTransport preferred is set to telnet"
+        Write-Verbose "The transport preferred setting controls which protocol is used if it is not explicitly set. Set this to 'none', 'ssh', or explicity set the transport input/output."
+    }
 } elseif ($VtyData.Vty5_15TransportPref) {
-    Write-Output "`tPASS`tTransport preferred is set to $($VtyData.Vty5_15TransportPref)"
+    if (!$FailOnly -and !$FailWarningOnly) {
+        Write-Output "`tPASS`tTransport preferred is set to $($VtyData.Vty5_15TransportPref)"
+    }
 }
 
 
@@ -1155,7 +1294,7 @@ if ($AccessTrunk.accessVlans.Count -gt 0) {
 if ($AccessTrunk.encapsulationTypes.Count -gt 0) {
     $AccessTrunk.encapsulationTypes.GetEnumerator() | 
         ForEach-Object {
-            Write-Output "`t`t$($_.Key) encapsulation: $($_.Value) active interface(s)"
+            Write-Output "`t`t$($_.Key.toString().toUpper()) encapsulation: $($_.Value) active interface(s)"
         }
     Write-Output ""
 }
