@@ -645,7 +645,7 @@ $CiscoConfig = @{
     snmpV3Group=            Search-ConfigForValue "^snmp-server group (.+) v3 priv"                 $Config.noInterfaces
     httpMgmtInterface=      Search-ConfigQuietly  "^ip http server$"                                $Config.noInterfaces
     ntpServer=              Search-ConfigForValue "^ntp server (\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3})"   $Config.noInterfaces
-    syslogServer=           Search-ConfigForValue "logging (\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3})"       $Config.noInterfaces
+    syslogServer=           Search-ConfigForValue "logging h?o?s?t? ?(\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3})" $Config.noInterfaces
     accessControlLists=     Search-ConfigForValue "^ip access-list \w+ (.+)"                        $Config.noInterfaces
     aaaAuthLocalEnabled=    Search-ConfigQuietly  "^aaa authentication login default local"         $Config.noInterfaces
     aaaAuthTacacsEnabled=   Search-ConfigQuietly  "^aaa authentication login default group tacacs+" $Config.noInterfaces
@@ -858,7 +858,9 @@ if ($CiscoConfig.httpMgmtInterface) {
     }
 }
 
-
+# ******
+# ******  display the offending interfaces here!
+# ******
 # displays how many interfaces use default access VLAN 1
 if ($AccessTrunk.CountVlan1 -gt 0) {
     Write-Output "`tFAIL`t`tThere are $($AccessTrunk.countVlan1) interface(s) configured for access VLAN 1"
@@ -1314,6 +1316,6 @@ if ($AccessTrunk.trunkNativeVlans.Count -gt 0) {
         trunk native VLAN
             switchport trunk native vlan xxxx
         display offending interfaces for access vlan 1
-        display offending interfaces for no sticky ports
         list VLAN used and their name
+        for interface vlan1 use the initial interface parsing and not the extract-intvlan1section 
 #>
