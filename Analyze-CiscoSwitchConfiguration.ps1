@@ -1314,8 +1314,9 @@ if ($AccessTrunk.trunkNativeVlans.Count -gt 0) {
 <#
     TODO:
         trunk native VLAN
-            switchport trunk native vlan xxxx
+            switchport trunk native vlan (\d{1,4})
         display offending interfaces for access vlan 1
         list VLAN used and their name
-        for interface vlan1 use the initial interface parsing and not the extract-intvlan1section 
+        for interface vlan1 use the initial interface parsing and not the extract-intvlan1section
+        review logic assuming that the default inferface mode is access (it's trunk)
 #>
