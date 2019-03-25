@@ -18,9 +18,9 @@
 
     This can be used to analyze multiple configs saved in a single directory
 .NOTES
-    Version 1.0.7
+    Version 1.0.8
     Sam Pursglove
-    Last modified: 14 MAR 2019
+    Last modified: 25 MAR 2019
 #>
 
 [CmdletBinding(DefaultParameterSetName='FailOnly')]
@@ -696,15 +696,15 @@ if ($CiscoConfig.enableSecret) {
 }
 
 # check for local user accounts
-if ($CiscoConfig.userAccountsSecret.Length -gt 0) {
+if ($CiscoConfig.userAccountsSecret.Count -gt 0) {
     if (!$FailOnly -and !$FailWarningOnly) {
-        Write-Output "`tPASS`t`tLocal accounts with secret password encryption:"
+        Write-Output "`tPASS`t`tLocal accounts with secret password encryption (ensure accounts are unique):"
         foreach ($user in $CiscoConfig.userAccountsSecret) {
             Write-Output "`t`t`t`t  $user"
         }
     }
 }
-if ($CiscoConfig.userAccountsPassword.Length -gt 0) {
+if ($CiscoConfig.userAccountsPassword.Count -gt 0) {
     Write-Output "`tFAIL`t`tLocal accounts with weak password encryption:"
     foreach ($user in $CiscoConfig.userAccountsPassword) {
         Write-Output "`t`t`t`t  $user"
@@ -713,22 +713,28 @@ if ($CiscoConfig.userAccountsPassword.Length -gt 0) {
 }
 
 # check for NTP server configuration
-if ($CiscoConfig.ntpServer.Length -gt 0) {
+if ($CiscoConfig.ntpServer.Count -gt 1) {
    if (!$FailOnly -and !$FailWarningOnly) {
-        Write-Output "`tPASS`t`tNTP server(s):"
+        Write-Output "`tPASS`t`tRedundant NTP servers are configured:"
   
         foreach ($server in $CiscoConfig.ntpServer) {
             Write-Output "`t`t`t`t  $($server)"
         }
     }
-} else {
+} elseif ($CiscoConfig.ntpServer.Count -gt 0) {
+        Write-Output "`tFAIL`t`tRedundant NTP servers must be configured:"
+  
+        foreach ($server in $CiscoConfig.ntpServer) {
+            Write-Output "`t`t`t`t  $($server)"
+        }
+ } else {
 
     Write-Output "`tFAIL`t`tNo NTP servers are configured"
     Write-Verbose "Configure at least one NTP server using the 'ntp server <server_ip_address>' command"
 }
 
 # check for syslog server configuration
-if ($CiscoConfig.syslogServer.Length -gt 0) {
+if ($CiscoConfig.syslogServer.Count -gt 0) {
     if (!$FailOnly -and !$FailWarningOnly) {
         Write-Output "`tPASS`t`tSyslog server(s):"
   
@@ -1268,26 +1274,27 @@ if (!$VtyData.Vty5_15TransportPref -and !$VtyData.Vty5_15TransportIn) {
 
 # prints some general interface stats info of the switch
 Write-Output "`n`tInterface statistics:"
-Write-Output "`t`tPhysical ports:`t$($AccessTrunk.countPhysicalInterfaces)"
-Write-Output "`t`tShutdown ports:`t$($AccessTrunk.CountShutInterfaces)"
-Write-Output "`t`tAccess ports:`t$($AccessTrunk.CountAccess)"
-Write-Output "`t`tTrunk ports:`t$($AccessTrunk.CountTrunkInterfaces)"
-Write-Output "`t`tPortFast ports: $($SpanningTreeInterfaceConfig.portFastCount)`n"
+Write-Output "`t  Physical ports:`t$($AccessTrunk.countPhysicalInterfaces)"
+Write-Output "`t  Shutdown ports:`t$($AccessTrunk.CountShutInterfaces)"
+Write-Output "`t  Access ports:`t`t$($AccessTrunk.CountAccess)"
+Write-Output "`t  Trunk ports:`t`t$($AccessTrunk.CountTrunkInterfaces)"
+Write-Output "`t  PortFast ports:`t$($SpanningTreeInterfaceConfig.portFastCount)`n"
 
 # display the names of any standard or extended ACLs
 if ($CiscoConfig.accessControlLists.Length -gt 0) {
     Write-Output "`tConfigured standard or extended ACLs"
   
     foreach ($acl in $CiscoConfig.accessControlLists) {
-        Write-Output "`t`t$($acl)"
+        Write-Output "`t  $($acl)"
     }
+    Write-Output ""
 }
 
 # print the summary of access vlans
 if ($AccessTrunk.accessVlans.Count -gt 0) {
     $AccessTrunk.accessVlans.GetEnumerator() | 
         ForEach-Object {
-            Write-Output "`t`tAccess VLAN $($_.Key): $($_.Value) active interface(s)"
+            Write-Output "`tAccess VLAN $($_.Key): $($_.Value) active interface(s)"
         }
     Write-Output ""
 }
@@ -1296,7 +1303,7 @@ if ($AccessTrunk.accessVlans.Count -gt 0) {
 if ($AccessTrunk.encapsulationTypes.Count -gt 0) {
     $AccessTrunk.encapsulationTypes.GetEnumerator() | 
         ForEach-Object {
-            Write-Output "`t`t$($_.Key.toString().toUpper()) encapsulation: $($_.Value) active interface(s)"
+            Write-Output "`t$($_.Key.toString().toUpper()) encapsulation: $($_.Value) active interface(s)"
         }
     Write-Output ""
 }
@@ -1305,7 +1312,7 @@ if ($AccessTrunk.encapsulationTypes.Count -gt 0) {
 if ($AccessTrunk.trunkNativeVlans.Count -gt 0) {
     $AccessTrunk.trunkNativeVlans.GetEnumerator() | 
         ForEach-Object {
-            Write-Output "`t`tTrunk native VLAN $($_.Key): $($_.Value) active interface(s)"
+            Write-Output "`tTrunk native VLAN $($_.Key): $($_.Value) active interface(s)"
         }
     Write-Output ""
 }
