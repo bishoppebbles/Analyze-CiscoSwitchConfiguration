@@ -646,6 +646,7 @@ $CiscoConfig = @{
     httpMgmtInterface=      Search-ConfigQuietly  "^ip http server$"                                $Config.noInterfaces
     ntpServer=              Search-ConfigForValue "^ntp server (\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3})"   $Config.noInterfaces
     syslogServer=           Search-ConfigForValue "logging h?o?s?t? ?(\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3})" $Config.noInterfaces
+    tftpServer=             Search-ConfigQuietly  "^tftp-server"                                    $Config.noInterfaces
     accessControlLists=     Search-ConfigForValue "^ip access-list \w+ (.+)"                        $Config.noInterfaces
     aaaAuthLocalEnabled=    Search-ConfigQuietly  "^aaa authentication login default local"         $Config.noInterfaces
     aaaAuthTacacsEnabled=   Search-ConfigQuietly  "^aaa authentication login default group tacacs+" $Config.noInterfaces
@@ -712,6 +713,11 @@ if ($CiscoConfig.userAccountsPassword.Count -gt 0) {
     Write-Verbose "All local user accunts should be stored with the strongest form of encryption using the the command 'username <user> secret <password>'"
 }
 
+
+###############################################
+################ SERVER CHECKS ################
+###############################################
+
 # check for NTP server configuration
 if ($CiscoConfig.ntpServer.Count -gt 1) {
    if (!$FailOnly -and !$FailWarningOnly) {
@@ -747,6 +753,17 @@ if ($CiscoConfig.syslogServer.Count -gt 0) {
     Write-Output "`tFAIL`t`tNo syslog servers are configured"
     Write-Verbose "Configure at least one syslog server using the 'logging <server_ip_address>' command"
 }
+
+# check for the existance of a tftp server, only display output for a failure
+if ($CiscoConfig.tftpServer) {
+    Write-Output "`tFAIL`t`tA TFTP server is configured"
+    Write-Verbose "TFTP is an insecure protocol and is not approved for data transfer, remove this function using the 'no tftp-server' command."
+}
+
+
+##################
+###### AAA #######
+##################
 
 # check is aaa is enabled
 if (!$FailOnly) {
@@ -798,6 +815,9 @@ if (!$CiscoConfig.sshTimeout) {
     }
 }
 
+########################
+##### LOGIN BANNER #####
+########################
 
 # check if a login banner message is used
 if ($CiscoConfig.loginBanner) {
