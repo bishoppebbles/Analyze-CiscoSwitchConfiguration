@@ -227,7 +227,7 @@ Begin {
 
             #handle edge case of finding our console line
             if ($line -match "^line con 0$") {
-                $Skip = $true
+                $Skip = $false
                 continue
             }
 
@@ -273,7 +273,7 @@ Begin {
 
             #handle edge case of finding our line
             if ($line -match "^line vty 0 4$") {
-                $Skip = $true
+                $Skip = $false
                 continue
             }
 
@@ -293,13 +293,13 @@ Begin {
                 $Properties.Add('Password',$true)
             } elseif ($line -match "login local$") {
                 $Properties.Add('LoginLocal',$true)
-            } elseif ($_ -match "access-class (.+) in") {
+            } elseif ($line -match "access-class (.+) in") {
                 $Properties.Add('AclIn',$Matches[1])
             } elseif ($line -match "transport preferred (\w+)$") {
                 $Properties.Add('TransportPref',$Matches[1])
             } elseif ($line -match "transport output (\w+)$") {
                 $Properties.Add('TransportOut',$Matches[1])
-            } elseif ($_ -match "transport input (\w+)$") {
+            } elseif ($line -match "transport input (\w+)$") {
                 $Properties.Add('TransportIn',$Matches[1])
             }
         }
@@ -320,9 +320,11 @@ Begin {
 
             #handle edge case of finding our  line
             if ($line -match "^line vty 5 15$") {
-                $Skip = $true
+                $Skip = $false
                 continue
             }
+
+            $Skip = $false
 
             #watch for new section, break out if it occurs
             if (-not ($line.startswith(" "))) {
@@ -340,13 +342,13 @@ Begin {
                 $Properties.Add('Password',$true)
             } elseif ($line -match "login local$") {
                 $Properties.Add('LoginLocal',$true)
-            } elseif ($_ -match "access-class (.+) in") {
+            } elseif ($line -match "access-class (.+) in") {
                 $Properties.Add('AclIn',$Matches[1])
             } elseif ($line -match "transport preferred (\w+)$") {
                 $Properties.Add('TransportPref',$Matches[1])
             } elseif ($line -match "transport output (\w+)$") {
                 $Properties.Add('TransportOut',$Matches[1])
-            } elseif ($_ -match "transport input (\w+)$") {
+            } elseif ($line -match "transport input (\w+)$") {
                 $Properties.Add('TransportIn',$Matches[1])
             }
         }
@@ -1137,8 +1139,8 @@ Process {
         $props = @{
             'Category'='SNMP'
             'Description'='v2 Read-Write (RW) community strings'
-            'State'='Pass'
-            'Value'='Disabled'
+            'State'='Fail'
+            'Value'='Enabled'
             'Comment'="SNMPv2 is an unencrypted protocol and the cleartext can be sniffed on the network.  If read-write strings are required these should be enabled using SNMPv3 with the appropriate authentication and encryption configured."
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
