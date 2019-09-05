@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Analyzes the configuration security settings of a Cisco switch based on recommended practices.
 .DESCRIPTION
@@ -9,6 +9,8 @@
     Outputs failed tests only; tests that pass or provide a warning are not displayed
 .PARAMETER FailWarningOnly
     Outputs failed tests and warnings only; tests that pass are not displayed
+.PARAMETER Output
+    Set the analysis output delivery method: Excel (default), PowerShell console
 .EXAMPLE
     Analyze-CiscoSwitchConfiguration.ps1 -ConfigFile cisco_config.txt
 
@@ -18,9 +20,10 @@
 
     This can be used to analyze multiple configs saved in a single directory
 .NOTES
-    Version 1.0.8
+    Version 1.0.9
     Sam Pursglove
-    Last modified: 25 MAR 2019
+    James Swineford
+    Last modified: 05 SEP 2019
 #>
 
 [CmdletBinding(DefaultParameterSetName='FailOnly')]
@@ -37,22 +40,20 @@ param (
     [switch]$FailWarningOnly,
 
     [Parameter(HelpMessage='Output type required')]
-    [ValidateSet('Display','Excel','CSV')]
-    [string]$Output = 'Display'
+    [ValidateSet('Display','Excel')]
+    [string]$Output = 'Excel'
 
 )
 
 
 Begin {
 
-    #region Functions
+    # region functions
     # searches the config and returns the value(s) of interest if they are found
     function Search-ConfigForValue {
     
         param ([string]$SearchString, $SourceData)
 
-        #$SourceData | Where-Object { $_ -match $SearchString } | ForEach-Object { $Matches[1] }
-        #The below is actually faster by an order of 100
         foreach ($line in $SourceData) { 
             if ($line -match $SearchString) { $Matches[1] } 
         }
@@ -105,7 +106,7 @@ Begin {
                     
                         $Properties.Add('NoIpAddress',$true)
 
-                    } elseif ($_ -match "switchport mode (access|trunk)$") {
+                    } elseif ($_ -match "switchport mode (access|trunk|dynamic)") {
                     
                         $Properties.Add('Mode',$Matches[1])
 
@@ -306,6 +307,7 @@ Begin {
 
         New-Object -TypeName psobject -Property $Properties
     }
+    
     function Extract-VTY5-15Section {
         param ($SourceData)
 
@@ -365,11 +367,15 @@ Begin {
         [int]$CountPhysicalInterfaces = 0
         [int]$CountShutInterfaces = 0
         [int]$CountAccess = 0
-        [int]$CountVlan1 = 0
+        [int]$CountAccessVlan1 = 0
+        [int]$CountDynamicVlan1 = 0
         [int]$CountTrunkInterfaces = 0
+        [int]$CountDynamicAutoDesirable = 0
 
         $Misconfig = @()
         $AccessVlans = @{}
+        $AccessInterfaceVlan1 = @()
+        $DynamicInterfaceVlan1 = @()
         $EncapsulationTypes = @{}
         $TrunkNativeVlans = @{}
 
@@ -391,8 +397,37 @@ Begin {
                         
                     $CountShutInterfaces++
                 
+                # check if the switchport mode as been configured or if it is set to dynamic auto|desirable
+                # the default for not setting on newer switches is auto while desirable was for older ones
+                # note: if a dynamic switchport does not trunk it resorts to access mode
+                } elseif ($_.Mode -eq $null -or $_.Mode -eq 'dynamic') {
+
+                    $CountDynamicAutoDesirable++
+
+                    # if the dynamic switchport is not trunking it's in access because of this
+                    # check if the  port uses any vlan besides vlan 1
+                    if ($_.AccessVlan -ne $null -and $_.AccessVlan -ne 1) { 
+                    
+                        # does this vlan already exist in the hash table? if so, increase the count by 1
+                        if ($AccessVlans.ContainsKey($_.AccessVlan)) {
+                        
+                            $AccessVlans.Set_Item($_.AccessVlan, $AccessVlans.($_.AccessVlan) + 1) 
+                    
+                        # if this a new vlan add it to the hash table and set the count to 
+                        } else {
+                        
+                            $AccessVlans.Add($_.AccessVlan, 1)
+                        }
+                    
+                    # count the number of ports and save the interface using vlan 1
+                    } else {
+                        
+                        $CountDynamicVlan1++
+                        $DynamicInterfaceVlan1 += "$($_.InterfaceType)$($_.InterfaceNumber)"
+                    }
+
                 # check if this is an access port
-                } elseif ($_.Mode -eq 'access' -or $_.Mode -eq $null) {
+                } elseif ($_.Mode -eq 'access') {
                     
                     $CountAccess++
 
@@ -410,10 +445,11 @@ Begin {
                             $AccessVlans.Add($_.AccessVlan, 1)
                         }
                     
-                    # count the number of ports using vlan 1
+                    # count the number of ports and save the interface using vlan 1
                     } else {
                         
-                        $CountVlan1++
+                        $CountAccessVlan1++
+                        $AccessInterfaceVlan1 += "$($_.InterfaceType)$($_.InterfaceNumber)"
                     }
                 
                 # check if the interface is a trunk
@@ -452,15 +488,19 @@ Begin {
             }
 
         $ReturnData = @{
-            misconfig=          $Misconfig
-            accessVlans=        $AccessVlans
-            encapsulationTypes= $EncapsulationTypes
-            trunkNativeVlans=   $TrunkNativeVlans
-            countPhysicalInterfaces= $CountPhysicalInterfaces
-            countShutInterfaces=     $CountShutInterfaces
-            countAccess=             $CountAccess
-            countVlan1=              $CountVlan1
-            countTrunkInterfaces=    $CountTrunkInterfaces
+            misconfig=                 $Misconfig
+            accessVlans=               $AccessVlans
+            accessInterfaceVlan1=      $AccessInterfaceVlan1
+            dynamicInterfaceVlan1=     $DynamicInterfaceVlan1
+            encapsulationTypes=        $EncapsulationTypes
+            trunkNativeVlans=          $TrunkNativeVlans
+            countPhysicalInterfaces=   $CountPhysicalInterfaces
+            countShutInterfaces=       $CountShutInterfaces
+            countAccess=               $CountAccess
+            countAccessVlan1=          $CountAccessVlan1
+            countDynamicVlan1=         $CountDynamicVlan1
+            countTrunkInterfaces=      $CountTrunkInterfaces
+            countDynamicAutoDesirable= $CountDynamicAutoDesirable
         }
 
         $ReturnData
@@ -507,7 +547,8 @@ Begin {
                 $_.Shutdown      -ne $true   -and 
                 $_.Mode          -ne 'trunk' -and
                 $_.Interfacetype -ne 'Vlan') {
-                    $NonStickyInterfaces += "$($_.InterfaceType)$($_.InterfaceNumber)"            
+                
+                $NonStickyInterfaces += "$($_.InterfaceType)$($_.InterfaceNumber)"            
             }
         }
 
@@ -561,56 +602,74 @@ Begin {
     }
 
     function Output-Display {
-    param(
-        [string]$switch,
-        [System.Collections.ArrayList]$SwitchResults,
-        [System.Collections.Hashtable]$SwitchInfo
-    )
+        param(
+            [string]$switch,
+            [System.Collections.ArrayList]$SwitchResults,
+            [System.Collections.Hashtable]$SwitchInfo
+        )
+        
         if ($FailOnly) {
             $SwitchResults = $SwitchResults | Where-Object {$_.State -eq 'Fail'}
         } elseif ($FailWarningOnly) {
             $SwitchResults = $SwitchResults | Where-Object {$_.State -ne 'Pass'}
         }
+        
         $SwitchResults = $SwitchResults | Sort-Object Category
+        
         Write-Output $switch.ToUpper()
+        
         $SwitchResults | Format-Table -Property @{e='Category'; width=9}, @{e='Description'; width=38}, @{e='State'; width=9}, @{e='Value'; width=23}, @{e='Comment'; width=36} -Wrap
+        
         Write-Output "General Information"
-        Write-Output "`tPhysical ports: $($SwitchInfo['Physical Ports'])"
-        Write-Output "`tShutdown ports: $($SwitchInfo['Shutdown ports'])"
-        Write-Output "`tAccess ports: $($SwitchInfo['Access ports'])"
-        Write-Output "`tTrunk ports: $($SwitchInfo['Trunk ports'])"
-        Write-Output "`tPortFast ports: $($SwitchInfo['PortFast ports'])"
+        Write-Output "`tPhysical ports:`t$($SwitchInfo['Physical Ports'])"
+        Write-Output "`tShutdown ports:`t$($SwitchInfo['Shutdown ports'])"
+        Write-Output "`tAccess ports:`t$($SwitchInfo['Access ports'])"
+        
+        if ($SwitchInfo['Access VLANs'] -ne $null) {
+            
+            foreach ($key in $SwitchInfo['Access VLANs'].GetEnumerator()) {
+                if ($key.name.length -gt 3) {
+                    Write-Output "`tAccess VLAN$($key.name):$($key.value) active interfaces"
+                } else {
+                    Write-Output "`tAccess VLAN$($key.name):`t$($key.value) active interfaces"
+                }
+            }
+        }
+
+        Write-Output "`tPortFast ports:`t$($SwitchInfo['PortFast ports'])"
+        Write-Output "`tTrunk ports:`t$($SwitchInfo['Trunk ports'])"
+        
+        if ($SwitchInfo['Native Trunks'] -ne $null) {
+            
+            foreach ($key in $SwitchInfo['Native Trunks'].GetEnumerator()) {
+                Write-Output "`tTrunk native VLAN$($key.name):`t$($key.value) active interfaces"
+            }
+        }
+
+        if ($SwitchInfo['Encapsulation'] -ne $null) {
+            
+            foreach ($key in $SwitchInfo['Encapsulation'].GetEnumerator()) {
+                Write-Output "`t$($key.name) encapsulation:`t$($key.value) active interfaces"
+            }
+        }
+
         if ($SwitchInfo['ACLs'] -ne $null) {
             Write-Output "`tACLs:"
+            
             Foreach ($acl in $SwitchInfo['ACLs']) {
                 Write-Output "`t  $acl"
-            }
-        }
-        if ($SwitchInfo['Access VLANs'] -ne $null) {
-            foreach ($key in $SwitchInfo['Access VLANs'].GetEnumerator()) {
-                Write-Output "`tAccess VLAN $($key.name): $($key.value) active interfaces"
-            }
-        }
-        if ($SwitchInfo['Encapsulation'] -ne $null) {
-            foreach ($key in $SwitchInfo['Encapsulation'].GetEnumerator()) {
-                Write-Output "`t$($key.name) encapsulation: $($key.value) active interfaces"
-            }
-        }
-        if ($SwitchInfo['Native Trunks'] -ne $null) {
-            foreach ($key in $SwitchInfo['Native Trunks'].GetEnumerator()) {
-                Write-Output "`tTrunk native VLAN $($key.name): $($key.value) active interfaces"
             }
         }
     }
 
     function Output-Excel {
-    param(
-        [string]$switch,
-        [System.Collections.ArrayList]$SwitchResults,
-        [System.Collections.Hashtable]$SwitchInfo
-    )
+        param(
+            [string]$switch,
+            [System.Collections.ArrayList]$SwitchResults,
+            [System.Collections.Hashtable]$SwitchInfo
+        )
 
-        #create new sheet for switch results
+        # create new sheet for switch results
         $objSheetResults = $script:objWorkbook.Sheets.Add()
         try {
             $objSheetResults.Name = $switch
@@ -621,7 +680,7 @@ Begin {
             }
         }
 
-        #set results column widths and formating
+        # set results column widths and formating
         $objSheetResults.PageSetup.Orientation = 2
         $objSheetResults.Columns.Item(1).ColumnWidth = 9
         $objSheetResults.Columns.Item(2).ColumnWidth = 38
@@ -634,7 +693,7 @@ Begin {
         $objSheetResults.application.activewindow.splitrow = 1
         $objSheetResults.application.activewindow.freezepanes = $true
 
-        #set results conditional formatting
+        # set results conditional formatting
         $objSheetResults.Range('$A:$E').FormatConditions.Add(1,3,'="Fail"') | Out-Null
         $objSheetResults.Range('$A:$E').FormatConditions.Item(1).Font.Color = 393372
         $objSheetResults.Range('$A:$E').FormatConditions.Item(1).Interior.Color = 13551615
@@ -642,38 +701,50 @@ Begin {
         $objSheetResults.Range('$A:$E').FormatConditions.Item(2).Font.Color = 26012
         $objSheetResults.Range('$A:$E').FormatConditions.Item(2).Interior.Color = 10284031
         
-        #Populate the general info sheet
+        # populate the general info sheet
         $output = "$switch`n"
         $output += "Physical ports`t$($SwitchInfo['Physical Ports'])`n"
         $output += "Shutdown ports`t$($SwitchInfo['Shutdown ports'])`n"
         $output += "Access ports`t$($SwitchInfo['Access ports'])`n"
-        $output += "Trunk ports`t$($SwitchInfo['Trunk ports'])`n"
-        $output += "PortFast ports`t$($SwitchInfo['PortFast ports'])`n"
-        if ($SwitchInfo['ACLs'] -ne $null) {
-            $output += "ACLs:`n"
-            Foreach ($acl in $SwitchInfo['ACLs']) {
-                $output += "`t$acl`n"
-            }
-        }
+        
         if ($SwitchInfo['Access VLANs'] -ne $null) {
+            
             foreach ($key in $SwitchInfo['Access VLANs'].GetEnumerator()) {
                 $output += "Access VLAN $($key.name)`t$($key.value) active interfaces`n"
             }
         }
-        if ($SwitchInfo['Encapsulation'] -ne $null) {
-            foreach ($key in $SwitchInfo['Encapsulation'].GetEnumerator()) {
-                $output += "$($key.name) encapsulation`t$($key.value) active interfaces`n"
-            }
-        }
+        
+        $output += "PortFast ports`t$($SwitchInfo['PortFast ports'])`n"
+        $output += "Trunk ports`t$($SwitchInfo['Trunk ports'])`n"
+         
         if ($SwitchInfo['Native Trunks'] -ne $null) {
+            
             foreach ($key in $SwitchInfo['Native Trunks'].GetEnumerator()) {
                 $output += "Trunk native VLAN $($key.name)`t$($key.value) active interfaces`n"
             }
         }
+               
+        if ($SwitchInfo['Encapsulation'] -ne $null) {
+            
+            foreach ($key in $SwitchInfo['Encapsulation'].GetEnumerator()) {
+                $output += "$($key.name) encapsulation`t$($key.value) active interfaces`n"
+            }
+        }
+
+        if ($SwitchInfo['ACLs'] -ne $null) {
+            $output += "ACLs:`n"
+            
+            foreach ($acl in $SwitchInfo['ACLs']) {
+                $output += "`t$acl`n"
+            }
+        }
+        
         $lastRow = $script:objSheetInfo.UsedRange.SpecialCells(11).row #get last used row
+        
         if ($lastRow -gt 1) {
             $lastRow = $lastRow + 2
         }
+        
         $output | clip
         $script:objSheetInfo.Activate()
         $script:objSheetInfo.Cells.Item($lastRow,1).Select() | Out-Null #paste to last used row
@@ -685,12 +756,15 @@ Begin {
         } elseif ($FailWarningOnly) {
             $SwitchResults = $SwitchResults | Where-Object {$_.State -ne 'Pass'}
         }
+        
         $SwitchResults = $SwitchResults | Sort-Object Category
 
         $output = "Category`tDescription`tState`tValue`tComment`n"
+        
         foreach ($item in $SwitchResults) {
             $output += "$($item.Category)`t$($item.Description)`t$($item.State)`t`"$($item.Value)`"`t$($item.Comment)`n"
         }
+        
         $output | clip
         $objSheetResults.Activate()
         $objSheetResults.Cells.Item(1,1).Select() | Out-Null
@@ -702,7 +776,7 @@ Begin {
 
         $objSheetResults.Cells.Item(1,1).Select() | Out-Null #reset selection
 
-        #Keep the general info sheet active for final pass
+        # keep the general info sheet active for final pass
         $script:objSheetInfo.Activate()
         $script:objSheetInfo.Cells.Item(1,1).Select() | Out-Null #reset selection
         
@@ -710,7 +784,7 @@ Begin {
 
     function Prep-Excel {
 
-        #Set up Excel
+        # set up Excel
         $script:objExcel = New-Object -ComObject Excel.Application
         $script:objExcel.DisplayAlerts = $false
         $script:objExcel.visible = $true #for debugging only
@@ -720,7 +794,7 @@ Begin {
         $script:objSheetInfo = $script:objWorkbook.Sheets.Item(1)
         $script:objSheetInfo.Name = "General Info"
 
-        #set column widths
+        # set column widths
         $script:objSheetInfo.Columns.item(1).ColumnWidth = 20
         $script:objSheetInfo.Columns.Item(2).ColumnWidth = 17
     }
@@ -730,6 +804,7 @@ Begin {
     #Write-Output "Starting at $(get-date)"
 
     $MinimumIosVersion = 15.0
+    
     if ($Output -eq 'Excel') {
         Prep-Excel
     }
@@ -758,13 +833,13 @@ Process {
 
     # parse the interface section and remove it from the config so the remaining analysis
     # has less data to parse
-    $Config=      Extract-InterfaceSection $RawConfig
+    $Config= Extract-InterfaceSection $RawConfig
 
     # parse the interface vlan1, console, and vty line subsections
-    $IntVlan1Data= Extract-IntVlan1Section $RawConfig
-    $ConsoleData=  Extract-ConSection $Config.noInterfaces
-    $Vty0_4Data=      Extract-Vty0-4Section $Config.noInterfaces
-    $Vty5_15Data=      Extract-Vty5-15Section $Config.noInterfaces
+    $IntVlan1Data=                Extract-IntVlan1Section $RawConfig
+    $ConsoleData=                 Extract-ConSection $Config.noInterfaces
+    $Vty0_4Data=                  Extract-Vty0-4Section $Config.noInterfaces
+    $Vty5_15Data=                 Extract-Vty5-15Section $Config.noInterfaces
     $AccessTrunk=                 Analyze-AccessTrunkInterfaces $Config.interfaces
     $NonSticky=                   Analyze-PortSecuritySticky    $Config.interfaces
     $PortSecurityMaxCount=        Analyze-PortSecurityMax       $Config.interfaces
@@ -791,10 +866,10 @@ Process {
         syslogServer=           Search-ConfigForValue "logging h?o?s?t? ?(\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3})" $Config.noInterfaces
         tftpServer=             Search-ConfigQuietly  "^tftp-server"                                    $Config.noInterfaces
         accessControlLists=     Search-ConfigForValue "^ip access-list \w+ (.+)"                        $Config.noInterfaces
-        aaaAuthLocalEnabled=    Search-ConfigQuietly  "^aaa authentication login default local"         $Config.noInterfaces
-        aaaAuthTacacsEnabled=   Search-ConfigQuietly  "^aaa authentication login default group tacacs+" $Config.noInterfaces
-        tacacsServer=           Search-ConfigQuietly  "^tacacs-server host"                             $Config.noInterfaces
-        tacacsServerIp=         Search-ConfigForValue "^tacacs-server host"                             $Config.noInterfaces
+        #aaaAuthLocalEnabled=    Search-ConfigQuietly  "^aaa authentication login default local"         $Config.noInterfaces
+        #aaaAuthTacacsEnabled=   Search-ConfigQuietly  "^aaa authentication login default group tacacs+" $Config.noInterfaces
+        #tacacsServer=           Search-ConfigQuietly  "^tacacs-server host"                             $Config.noInterfaces
+        #tacacsServerIp=         Search-ConfigForValue "^tacacs-server host"                             $Config.noInterfaces
     }
 
     #region test conditions
@@ -804,6 +879,7 @@ Process {
 
     # check if a version of older than Cisco IOS 15 is being used
     if ([single]$version -ge $MinimumIosVersion) {
+        
         #splatting the properties of the new object for readability purposes only
         $props = @{
             'Category'='General'
@@ -812,6 +888,7 @@ Process {
             'Value'=$version
             'Comment'='Regularly check for IOS updates and patch the operating system.'
         }
+        
         #using out-null to mask automatic reporting of number of objects in arraylist
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     } else {
@@ -853,7 +930,7 @@ Process {
             'Description'='Enable secret/password'
             'State'='Pass'
             'Value'='Enable secret'
-            'Comment'=''
+            'Comment'='Secret encryption is used for the Enable account'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     } elseif ($CiscoConfig.enablePassword) {
@@ -876,17 +953,28 @@ Process {
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     }
 
-    # check for local user accounts
-    if ($CiscoConfig.userAccountsSecret.Count -gt 0) {
+    # check for local user accounts using secret encryption and more than one account
+    if ($CiscoConfig.userAccountsSecret.Count -gt 1) {
         $props = @{
             'Category'='General'
             'Description'='Password encryption for local accounts'
             'State'='Pass'
             'Value'=$($CiscoConfig.userAccountsSecret | Out-String)
-            'Comment'=''
+            'Comment'='Secret password encryption is used; each network administrator must have a unique login'
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
+    
+    } elseif ($CiscoConfig.userAccountsSecret.Count -gt 0) {
+        $props = @{
+            'Category'='General'
+            'Description'='Password encryption for local accounts'
+            'State'='Warning'
+            'Value'=$($CiscoConfig.userAccountsSecret | Out-String)
+            'Comment'='Secret password encryption is used; only one local user account is active, each network administrator must have a unique login'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     }
+
     if ($CiscoConfig.userAccountsPassword.Count -gt 0) {
         $props = @{
             'Category'='General'
@@ -1178,23 +1266,44 @@ Process {
     #endregion SNMP tests
 
     #region interfaces
-    # displays how many interfaces use default access VLAN 1
-    if ($AccessTrunk.CountVlan1 -gt 0) {
+    # displays how many interfaces use default access VLAN 1 set in access mode
+    if ($AccessTrunk.countAccessVlan1 -gt 0) {
         $props = @{
             'Category'='Interfaces'
-            'Description'='Using VLAN 1'
+            'Description'='Access ports using VLAN 1'
             'State'='Fail'
-            'Value'=$AccessTrunk.countVlan
-            'Comment'="All access ports should use a VLAN other than VLAN 1"
+            'Value'=$($AccessTrunk.accessInterfaceVlan1 | Out-String)
+            'Comment'="All access ports must use a VLAN other than VLAN 1"
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     } else {
         $props = @{
             'Category'='Interfaces'
-            'Description'='Using VLAN 1'
+            'Description'='Access ports using VLAN 1'
             'State'='Pass'
             'Value'=''
-            'Comment'=''
+            'Comment'='No access mode switchports operating in VLAN 1'
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
+    }
+
+    # displays how many interfaces use default access VLAN 1 set in dynamic mode
+    if ($AccessTrunk.countDynamicVlan1 -gt 0) {
+        $props = @{
+            'Category'='Interfaces'
+            'Description'='Dynamic ports using VLAN 1'
+            'State'='Fail'
+            'Value'=$($AccessTrunk.dynamicInterfaceVlan1 | Out-String)
+            'Comment'="Any access mode dynamic switchports must use a VLAN other than VLAN 1; if these switchports are trunking this is not applicable"
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
+    } else {
+        $props = @{
+            'Category'='Interfaces'
+            'Description'='Dynamic ports using VLAN 1'
+            'State'='Pass'
+            'Value'=''
+            'Comment'='No access mode dynamic switchports operating in VLAN 1'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     }
@@ -1942,13 +2051,13 @@ Process {
     $GenInfo = @{}
     $GenInfo['Physical ports'] = $AccessTrunk.countPhysicalInterfaces
     $GenInfo['Shutdown ports'] = $AccessTrunk.CountShutInterfaces
-    $GenInfo['Access ports'] = $AccessTrunk.CountAccess
-    $GenInfo['Trunk ports'] = $AccessTrunk.CountTrunkInterfaces
+    $GenInfo['Access ports']   = $AccessTrunk.CountAccess
+    $GenInfo['Access VLANs']   = $AccessTrunk.accessVlans
     $GenInfo['PortFast ports'] = $SpanningTreeInterfaceConfig.portFastCount
-    $GenInfo['ACLs'] = $CiscoConfig.accessControlLists
-    $GenInfo['Access VLANs'] = $AccessTrunk.accessVlans
-    $GenInfo['Encapsulation'] = $AccessTrunk.encapsulationTypes
-    $GenInfo['Native Trunks'] = $AccessTrunk.trunkNativeVlans
+    $GenInfo['Trunk ports']    = $AccessTrunk.CountTrunkInterfaces
+    $GenInfo['Encapsulation']  = $AccessTrunk.encapsulationTypes
+    $GenInfo['Native Trunks']  = $AccessTrunk.trunkNativeVlans
+    $GenInfo['ACLs']           = $CiscoConfig.accessControlLists
 
     #endregion general stats
 
@@ -1958,16 +2067,6 @@ Process {
     if ($Output -eq 'Excel') {
         Output-Excel -switch $hostname -SwitchResults $Results -SwitchInfo $GenInfo
     }
-
-    <#
-        TODO:
-            trunk native VLAN
-                switchport trunk native vlan (\d{1,4})
-            display offending interfaces for access vlan 1
-            list VLAN used and their name
-            for interface vlan1 use the initial interface parsing and not the extract-intvlan1section
-            review logic assuming that the default inferface mode is access (it's trunk)
-    #>
 }
 End {
     #Write-Output "Ending at $(Get-date)"
