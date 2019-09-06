@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Analyzes the configuration security settings of a Cisco switch based on recommended practices.
 .DESCRIPTION
@@ -13,11 +13,9 @@
     Set the analysis output delivery method: Excel (default), PowerShell console
 .EXAMPLE
     Analyze-CiscoSwitchConfiguration.ps1 -ConfigFile cisco_config.txt
-
     Analyze the Cisco switch configuration security settings.
 .EXAMPLE
     Get-ChildItem -Exclude *.ps1 | .\Analyze-CiscoSwitchConfiguration.ps1 
-
     This can be used to analyze multiple configs saved in a single directory
 .NOTES
     Version 1.0.9
@@ -48,7 +46,7 @@ param (
 
 Begin {
 
-    # region functions
+    #region functions
     # searches the config and returns the value(s) of interest if they are found
     function Search-ConfigForValue {
     
@@ -693,6 +691,16 @@ Begin {
         $objSheetResults.application.activewindow.splitrow = 1
         $objSheetResults.application.activewindow.freezepanes = $true
 
+        #set border
+        $objSheetResults.Range("A:E").Borders(7).LineStyle = 1
+        $objSheetResults.Range("A:E").Borders(8).LineStyle = 1
+        $objSheetResults.Range("A:E").Borders(9).LineStyle = 1
+        $objSheetResults.Range("A:E").Borders(10).LineStyle = 1
+
+        #set alignment
+        $objSheetResults.Range("A:D").Columns.HorizontalAlignment = -4108
+        $objSheetResults.Range("A:D").Columns.VerticalAlignment = -4108
+
         # set results conditional formatting
         $objSheetResults.Range('$A:$E').FormatConditions.Add(1,3,'="Fail"') | Out-Null
         $objSheetResults.Range('$A:$E').FormatConditions.Item(1).Font.Color = 393372
@@ -787,8 +795,8 @@ Begin {
         # set up Excel
         $script:objExcel = New-Object -ComObject Excel.Application
         $script:objExcel.DisplayAlerts = $false
-        $script:objExcel.visible = $true #for debugging only
-        #$script.objExcel.visible = $false
+        #$script:objExcel.visible = $true #for debugging only
+        $script:objExcel.visible = $false
         $script:objWorkbook = $script:objExcel.Workbooks.Add()
 
         $script:objSheetInfo = $script:objWorkbook.Sheets.Item(1)
@@ -2070,6 +2078,10 @@ Process {
 }
 End {
     #Write-Output "Ending at $(Get-date)"
+
+    if ($output -eq 'Excel') {
+        $objExcel.visible = $true
+    }
 
 }
 
