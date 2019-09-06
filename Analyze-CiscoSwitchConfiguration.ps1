@@ -699,7 +699,7 @@ Begin {
 
         #set alignment
         $objSheetResults.Range("A:D").Columns.HorizontalAlignment = -4108
-        $objSheetResults.Range("A:D").Columns.VerticalAlignment = -4108
+        $objSheetResults.Range("A:E").Columns.VerticalAlignment = -4108
 
         # set results conditional formatting
         $objSheetResults.Range('$A:$E').FormatConditions.Add(1,3,'="Fail"') | Out-Null
@@ -1095,7 +1095,7 @@ Process {
             'Description'='AAA'
             'State'='Fail'
             'Value'='Disabled'
-            'Comment'=''
+            'Comment'='Authentication, Authorization, and, Accounting (AAA) must be enabled'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     }
@@ -1320,19 +1320,19 @@ Process {
     if ($PortSecurityMaxCount.Count -gt 0) {
         $props = @{
             'Category'='Interfaces'
-            'Description'='Allowing multiple MAC addresses'
+            'Description'='Port security multiple MAC addresses'
             'State'='Fail'
             'Value'=$($PortSecurityMaxCount | Out-String)
-            'Comment'=''
+            'Comment'='Without justification the maximum number of allowable MAC address per port must be one'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     } else {
         $props = @{
             'Category'='Interfaces'
-            'Description'='Allowing multiple MAC addresses'
+            'Description'='Port security multiple MAC addresses'
             'State'='Pass'
             'Value'=''
-            'Comment'=''
+            'Comment'='Port security allows one MAC address per port'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     }
@@ -1341,19 +1341,19 @@ Process {
     if ($NonSticky.Count -gt 0) {
         $props = @{
             'Category'='Interfaces'
-            'Description'='Without sticky port port-security'
+            'Description'='Sticky port port-security'
             'State'='Fail'
             'Value'=$($NonSticky | Out-String)
-            'Comment'=''
+            'Comment'='All active access ports must have port security enabled'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     } else {
         $props = @{
             'Category'='Interfaces'
-            'Description'='Without sticky port port-security'
+            'Description'='Sticky port port-security'
             'State'='Pass'
             'Value'=''
-            'Comment'=''
+            'Comment'='All active access ports have port security enabled'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     }
@@ -1451,7 +1451,7 @@ Process {
 
     #region console analysis
 
-    if ($ConsoleData.ConLoggingSync) {
+    if ($ConsoleData.LoggingSync) {
         $props = @{
             'Category'='Console'
             'Description'='Logging synchronous'
@@ -1551,7 +1551,7 @@ Process {
             'Description'='Transport output'
             'State'='Pass'
             'Value'='SSH'
-            'Comment'=''
+            'Comment'='Transport output is configured to only use SSH'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     } elseif (!$ConsoleData.TransportOut) {
@@ -1560,7 +1560,7 @@ Process {
             'Description'='Transport output'
             'State'='Warning'
             'Value'='Default'
-            'Comment'=''
+            'Comment'='Transport output is not configured; it should be configured for SSH use only'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     } else {
@@ -1569,7 +1569,7 @@ Process {
             'Description'='Transport output'
             'State'='Warning'
             'Value'=$ConsoleData.TransportOut
-            'Comment'=''
+            'Comment'='The transport output should be configured for SSH use only'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     }
@@ -1698,6 +1698,15 @@ Process {
             }
             $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
         }
+    } else {
+        $props = @{
+            'Category'='VTY 0-4'
+            'Description'='Login method'
+            'State'='Fail'
+            'Value'='Incorrect VTY login configuration'
+            'Comment'="Configure the VTY login using only the 'login local' command, remove any presence of the 'login' or 'password' commands"
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     }
 
     # check if an ACL is applied to restrict remote access to specified IPs
@@ -1920,6 +1929,15 @@ Process {
             }
             $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
         }
+    } else {
+        $props = @{
+            'Category'='VTY 5-15'
+            'Description'='Login method'
+            'State'='Fail'
+            'Value'='Incorrect VTY login configuration'
+            'Comment'="Configure the VTY login using only the 'login local' command, remove any presence of the 'login' or 'password' commands"
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     }
 
     # check if an ACL is applied to restrict remote access to specified IPs
