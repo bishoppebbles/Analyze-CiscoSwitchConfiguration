@@ -821,7 +821,7 @@ Begin {
 
 Process {
 
-    Write-Progress "Processing $ConfigFile..."
+    Write-Progress "Processing $($ConfigFile.Split('\')[-1])..."
 
     # read in the config file to memory
     $RawConfig = Get-Content $ConfigFile
