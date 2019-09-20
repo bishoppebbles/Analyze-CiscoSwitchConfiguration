@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    Analyzes the configuration security settings of a Cisco switch based on recommended practices.
+    Analyzes the configuration security settings of a Cisco switch based on many recommended practices and requirements.
 .DESCRIPTION
     This script parses a plain text formatted Cisco switch configuration file and checks for specific security configuration entries.  It displays whether certain configuration requirements pass or fail the check.
 .PARAMETER ConfigFile
@@ -10,18 +10,24 @@
 .PARAMETER FailWarningOnly
     Outputs failed tests and warnings only; tests that pass are not displayed
 .PARAMETER Output
-    Set the analysis output delivery method: Excel (default), PowerShell console
+    Set the analysis output delivery method: Excel (default), PowerShell console.  If Excel is not on the host system where the script it run it will not work using that output method.
 .EXAMPLE
     Analyze-CiscoSwitchConfiguration.ps1 -ConfigFile cisco_config.txt
+    
     Analyze the Cisco switch configuration security settings.
 .EXAMPLE
     Get-ChildItem -Exclude *.ps1 | .\Analyze-CiscoSwitchConfiguration.ps1 
-    This can be used to analyze multiple configs saved in a single directory
+    
+    This can be used to analyze multiple configs saved in a single directory.  The results for each switch are displayed in its own workbook sheet.
 .NOTES
-    Version 1.0.9
+    If Excel is not installed on the host system where the script is run that Output option will not work.  Use the 'Display' option for console output.
+
+    If AAA is enabled (i.e., 'aaa new-model') the Console and VTY 0-15 line analysis will likely be inaccurate.
+
+    Version 1.0.10
     Sam Pursglove
     James Swineford
-    Last modified: 05 SEP 2019
+    Last modified: 19 SEP 2019
 #>
 
 [CmdletBinding(DefaultParameterSetName='FailOnly')]
@@ -1086,21 +1092,21 @@ Process {
             'Description'='AAA'
             'State'='Pass'
             'Value'='Enabled'
-            'Comment'=''
+            'Comment'="Console and VTY line analysis maybe inaccurate as it does not consider 'aaa new-model' authentication methods"
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     } else {
         $props = @{
             'Category'='Server'
             'Description'='AAA'
-            'State'='Fail'
+            'State'='Warning'
             'Value'='Disabled'
-            'Comment'='Authentication, Authorization, and, Accounting (AAA) must be enabled'
+            'Comment'='Authentication, Authorization, and, Accounting (AAA) is disabled'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     }
 
-        # check if the HTTP web management server is enabled
+    # check if the HTTP web management server is enabled
     if ($CiscoConfig.httpMgmtInterface) {
         $props = @{
             'Category'='Server'
@@ -1529,7 +1535,7 @@ Process {
                 'Description'='Login method'
                 'State'='Fail'
                 'Value'='Login and password'
-                'Comment'="The 'login' command must be replaced with the 'login local' command to authenticate against the local user database.  The 'password' command should be removed using the 'no' variant."
+                'Comment'="The 'login' command must be replaced with the 'login local' command to authenticate against the local user database.  The 'password' command must be removed using the 'no' variant."
             }
             $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
         } else {
@@ -1539,6 +1545,26 @@ Process {
                 'State'='Fail'
                 'Value'='Login only'
                 'Comment'="The 'login' command must be replaced with the 'login local' command."
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        }
+    } else {
+        if ($ConsoleData.Password) {
+            $props = @{
+                'Category'='Console'
+                'Description'='Login method'
+                'State'='Fail'
+                'Value'='Password only'
+                'Comment'="The password command is set but is inactive without the 'login' command; it must be replaced with the 'login local' command to authenticate against the local user database.  The 'password' command must be removed using the 'no' variant."
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        } else {
+            $props = @{
+                'Category'='Console'
+                'Description'='Login method'
+                'State'='Fail'
+                'Value'='No configuration'
+                'Comment'="Console access has no restrictions.  Enable access control using the local user database with the 'login local' command."
             }
             $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
         }
@@ -1699,14 +1725,25 @@ Process {
             $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
         }
     } else {
-        $props = @{
-            'Category'='VTY 0-4'
-            'Description'='Login method'
-            'State'='Fail'
-            'Value'='Incorrect VTY login configuration'
-            'Comment'="Configure the VTY login using only the 'login local' command, remove any presence of the 'login' or 'password' commands"
+         if ($Vty0_4Data.Password) {
+            $props = @{
+                'Category'='VTY 0-4'
+                'Description'='Login method'
+                'State'='Fail'
+                'Value'='Password only'
+                'Comment'="The password command is set but but inactive without the 'login' command; it must be replaced with the 'login local' command to authenticate against the local user database.  The 'password' command must be removed using the 'no' variant."
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        } else {
+            $props = @{
+                'Category'='VTY 0-4'
+                'Description'='Login method'
+                'State'='Fail'
+                'Value'='No configuration'
+                'Comment'="VTY lines have no configuration.  Enable remote access using the local user database with the 'login local' command."
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
         }
-        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     }
 
     # check if an ACL is applied to restrict remote access to specified IPs
@@ -1930,14 +1967,25 @@ Process {
             $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
         }
     } else {
-        $props = @{
-            'Category'='VTY 5-15'
-            'Description'='Login method'
-            'State'='Fail'
-            'Value'='Incorrect VTY login configuration'
-            'Comment'="Configure the VTY login using only the 'login local' command, remove any presence of the 'login' or 'password' commands"
+        if ($Vty5_15Data.Password) {
+            $props = @{
+                'Category'='VTY 5-15'
+                'Description'='Login method'
+                'State'='Fail'
+                'Value'='Password only'
+                'Comment'="The password command is set but but inactive without the 'login' command; it must be replaced with the 'login local' command to authenticate against the local user database.  The 'password' command must be removed using the 'no' variant."
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        } else {
+            $props = @{
+                'Category'='VTY 5-15'
+                'Description'='Login method'
+                'State'='Fail'
+                'Value'='No configuration'
+                'Comment'="VTY lines have no configuration.  Enable remote access using the local user database with the 'login local' command."
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
         }
-        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     }
 
     # check if an ACL is applied to restrict remote access to specified IPs
@@ -2100,7 +2148,46 @@ End {
     if ($output -eq 'Excel') {
         $objExcel.visible = $true
     }
-
 }
 
 #endregion Main Script
+
+<#
+
+TODO:
+
+    VLAN and IEEE 802.1q rule
+        VLAN 1 and all VLANs that are not used shall be removed from all trunk ports. Only the required VLANs will be allowed on each trunk port. VLAN 1 is enabled on all trunks and ports by default.
+    
+    “Unused” VLAN
+        All disabled ports shall be placed in a dedicated “UNUSED” VLAN (i.e., create a new VLAN). Do not use VLAN 1.
+    
+    Native VLAN
+        When trunking is required; Native VLAN shall be changed from VLAN 1 to a dedicated VLAN for use as a Native VLAN. 
+
+    No ports in VLAN 1 or Native VLAN
+        No ports shall be assigned to VLAN 1 or to the Native VLAN.
+
+    Configure the switchport to shut down when the max number of MAC addresses is exceeded.
+        Ensure that all switchports configured using MAC port security will shut down when the maximum number of configured MAC addresses are exceeded
+
+    Logging Configuration
+        All devices shall log a minimum of severity levels 0 through 4.   
+            archive
+            log config
+              logging enable
+              notify syslog contenttype plaintext
+              hidekeys
+
+    Log all Denied Attempts
+        All attempts to any port, protocol, or service that is denied shall be logged. Use example of denied traffic
+            login block-for 120 attempts 3 within 30
+            login on-failure log
+
+    Log all attempts to establish a management connection for administrative access.
+        Configure the device to log all access attempts to the device to establish a management connection for administrative access.
+            login on-success log
+
+    Authenticate all NTP messages received from NTP servers and peers
+        Configure the device to authenticate all received NTP messages using either PKI (supported in NTP v4) or a FIPS compliant message authentication code algorithm.
+#>
