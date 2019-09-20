@@ -1263,7 +1263,7 @@ Process {
             'Category'='SNMP'
             'Description'='v3 Group(s) configured for authPriv'
             'State'='Pass'
-            'Value'=$($CiscoConfig.snmpV3Group | Out-String)
+            'Value'=$($CiscoConfig.snmpV3Group | Sort-Object -Unique | Out-String)
             'Comment'=''
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
