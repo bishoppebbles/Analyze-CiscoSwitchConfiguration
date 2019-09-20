@@ -380,6 +380,7 @@ Begin {
         $AccessVlans = @{}
         $AccessInterfaceVlan1 = @()
         $DynamicInterfaceVlan1 = @()
+        $ShutdownPortVlan1 = @()
         $EncapsulationTypes = @{}
         $TrunkNativeVlans = @{}
 
@@ -400,6 +401,12 @@ Begin {
                 if ($_.Shutdown -ne $null) {
                         
                     $CountShutInterfaces++
+
+                    #  all disabled ports shall be placed in a dedicated “UNUSED” VLAN that is also not VLAN1
+                    if ($_.AccessVlan -eq $null -or $_.AccessVlan -eq 1) { 
+                        
+                        $ShutdownPortVlan1 += "$($_.InterfaceType)$($_.InterfaceNumber)"
+                    }
                 
                 # check if the switchport mode as been configured or if it is set to dynamic auto|desirable
                 # the default for not setting on newer switches is auto while desirable was for older ones
@@ -494,6 +501,7 @@ Begin {
         $ReturnData = @{
             misconfig=                 $Misconfig
             accessVlans=               $AccessVlans
+            shutdownPortVlan1=         $ShutdownPortVlan1
             accessInterfaceVlan1=      $AccessInterfaceVlan1
             dynamicInterfaceVlan1=     $DynamicInterfaceVlan1
             encapsulationTypes=        $EncapsulationTypes
@@ -850,10 +858,10 @@ Process {
     $Config= Extract-InterfaceSection $RawConfig
 
     # parse the interface vlan1, console, and vty line subsections
-    $IntVlan1Data=                Extract-IntVlan1Section $RawConfig
-    $ConsoleData=                 Extract-ConSection $Config.noInterfaces
-    $Vty0_4Data=                  Extract-Vty0-4Section $Config.noInterfaces
-    $Vty5_15Data=                 Extract-Vty5-15Section $Config.noInterfaces
+    $IntVlan1Data=                Extract-IntVlan1Section       $RawConfig
+    $ConsoleData=                 Extract-ConSection            $Config.noInterfaces
+    $Vty0_4Data=                  Extract-Vty0-4Section         $Config.noInterfaces
+    $Vty5_15Data=                 Extract-Vty5-15Section        $Config.noInterfaces
     $AccessTrunk=                 Analyze-AccessTrunkInterfaces $Config.interfaces
     $NonSticky=                   Analyze-PortSecuritySticky    $Config.interfaces
     $PortSecurityMaxCount=        Analyze-PortSecurityMax       $Config.interfaces
@@ -1318,6 +1326,27 @@ Process {
             'State'='Pass'
             'Value'=''
             'Comment'='No access mode dynamic switchports operating in VLAN 1'
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
+    }
+
+    # displays how many interfaces use default access VLAN 1 set in dynamic mode
+    if ($AccessTrunk.shutdownPortVlan1 -gt 0) {
+        $props = @{
+            'Category'='Interfaces'
+            'Description'='Shutdown ports in VLAN 1'
+            'State'='Fail'
+            'Value'=$($AccessTrunk.shutdownPortVlan1 | Out-String)
+            'Comment'="Any shutdown port must be assigned to an unused VLAN that is also not VLAN 1"
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
+    } else {
+        $props = @{
+            'Category'='Interfaces'
+            'Description'='Shutdown ports in VLAN 1'
+            'State'='Pass'
+            'Value'=''
+            'Comment'='No shutdown ports are assigned to VLAN 1'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     }
@@ -2157,10 +2186,7 @@ End {
 TODO:
 
     VLAN and IEEE 802.1q rule
-        VLAN 1 and all VLANs that are not used shall be removed from all trunk ports. Only the required VLANs will be allowed on each trunk port. VLAN 1 is enabled on all trunks and ports by default.
-    
-    “Unused” VLAN
-        All disabled ports shall be placed in a dedicated “UNUSED” VLAN (i.e., create a new VLAN). Do not use VLAN 1.
+        VLAN 1 and all VLANs that are not used shall be removed from all trunk ports. Only the required VLANs will be allowed on each trunk port. VLAN 1 is enabled on all trunks and ports by default.      
     
     Native VLAN
         When trunking is required; Native VLAN shall be changed from VLAN 1 to a dedicated VLAN for use as a Native VLAN. 
