@@ -89,7 +89,7 @@ Begin {
         $Properties = @{}
 
         $SourceData | ForEach-Object { 
-            if ($_ -notmatch "^interface ((Ethernet|FastEthernet|GigabitEthernet|Vlan).+$)" -and $Flag) {
+            if ($_ -notmatch "^interface ((Ethernet|FastEthernet|GigabitEthernet|TenGigabitEthernet|Vlan).+$)" -and $Flag) {
 
                 $NoInterfaces.Add($_)
                 
@@ -435,6 +435,39 @@ Begin {
                         
                         $CountDynamicVlan1++
                         $DynamicInterfaceVlan1 += "$($_.InterfaceType)$($_.InterfaceNumber)"
+
+                        if ($_.TrunkEncapsulation) {
+                        
+                            # if a previously used trunk encapsulation types is used increase the count
+                            if ($EncapsulationTypes.ContainsKey($_.TrunkEncapsulation)) {
+                        
+                                $EncapsulationTypes.Set_Item($_.TrunkEncapsulation, $EncapsulationTypes.($_.TrunkEncapsulation) + 1) 
+                    
+                            # if a new trunk encapsulation type is used add it to the hash table
+                            } else {
+                        
+                                $EncapsulationTypes.Add($_.TrunkEncapsulation, 1)
+                            }
+                        }
+
+                        if ($_.TrunkNativeVlan) {
+
+                            # if a previously used trunk native vlan is used increase the count
+                            if ($TrunkNativeVlans.ContainsKey($_.TrunkNativeVlan)) {
+                        
+                                $TrunkNativeVlans.Set_Item($_.TrunkNativeVlan, $TrunkNativeVlans.($_.TrunkNativeVlan) + 1) 
+                    
+                            # if a new trunk vlan is used add it to the hash table
+                            } else {
+                        
+                                $TrunkNativeVlans.Add($_.TrunkNativeVlan, 1)
+                            }
+                        }
+
+                        if ($_.TrunkEncapsulation -ne $null -or $_.TrunkNativeVlan) {
+                            
+                            $CountTrunkInterfaces++
+                        }                    
                     }
 
                 # check if this is an access port
@@ -554,14 +587,17 @@ Begin {
 
         $SourceData | ForEach-Object {
         
-            if ($_.PortSecurity  -ne $true   -and 
-                $_.StickyPort    -ne $true   -and 
-                $_.Shutdown      -ne $true   -and 
-                $_.Mode          -ne 'trunk' -and
-                $_.Interfacetype -ne 'Vlan') {
+            if ($_.PortSecurity        -ne $true   -and 
+                $_.StickyPort          -ne $true   -and 
+                $_.Shutdown            -ne $true   -and
+                $_.Mode                -ne 'trunk' -and 
+                ($_.TrunkEncapsulation -eq $null   -and $_.Mode -ne $null) -and
+                ($_.TrunkNativeVlan    -eq $null   -and $_.Mode -ne $null) -and
+                $_.Interfacetype       -ne 'Vlan') {
                 
                 $NonStickyInterfaces += "$($_.InterfaceType)$($_.InterfaceNumber)"            
             }
+            #Write-Host "$_.TrunkEncapsulation and $_.TrunkNativeVlan"
         }
 
         $NonStickyInterfaces
