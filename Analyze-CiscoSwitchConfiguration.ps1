@@ -24,6 +24,8 @@
 
     If AAA is enabled (i.e., 'aaa new-model') the Console and VTY 0-15 line analysis will likely be inaccurate.
 
+    If there are incorrect config settings using both access and trunk commands and/or more complicated interface access/trunk config settings the logic of this code may be inaccurate and will require manual review.
+
     Version 1.0.10
     Sam Pursglove
     James Swineford
@@ -101,6 +103,11 @@ Begin {
                         $Properties.Add('InterfaceType',$Matches[1])
                         $Properties.Add('InterfaceNumber',$Matches[2])
 
+                     } elseif ($_ -match "^interface (Ethernet|FastEthernet|GigabitEthernet)(\d)") {
+
+                        $Properties.Add('InterfaceType',$Matches[1])
+                        $Properties.Add('InterfaceNumber',$Matches[2])
+                
                     } elseif ($_ -match "^interface Vlan(\d{1,4})") {
 
                         $Properties.Add('InterfaceType','Vlan')
