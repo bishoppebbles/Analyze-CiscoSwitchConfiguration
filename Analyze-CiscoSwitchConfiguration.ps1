@@ -26,7 +26,7 @@
 
     If there are incorrect config settings using both access and trunk commands and/or more complicated interface access/trunk config settings the logic of this code may be inaccurate and will require manual review.
 
-    Version 1.0.10
+    Version 1.0.11
     Sam Pursglove
     James Swineford
     Last modified: 19 SEP 2019
