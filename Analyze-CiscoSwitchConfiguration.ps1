@@ -26,10 +26,10 @@
 
     If there are incorrect config settings using both access and trunk commands and/or more complicated interface access/trunk config settings the logic of this code may be inaccurate and will require manual review.
 
-    Version 1.0.11
+    Version 1.0.12
     Sam Pursglove
     James Swineford
-    Last modified: 19 SEP 2019
+    Last modified: 20 DEC 2019
 #>
 
 [CmdletBinding(DefaultParameterSetName='FailOnly')]
@@ -99,11 +99,6 @@ Begin {
            
                 if ($_ -notmatch "!") {
                     if ($_ -match "^interface (\w+)(\d\/\d{1,2}(\/\d{1,2})?)") {
-
-                        $Properties.Add('InterfaceType',$Matches[1])
-                        $Properties.Add('InterfaceNumber',$Matches[2])
-
-                     } elseif ($_ -match "^interface (Ethernet|FastEthernet|GigabitEthernet)(\d)") {
 
                         $Properties.Add('InterfaceType',$Matches[1])
                         $Properties.Add('InterfaceNumber',$Matches[2])
