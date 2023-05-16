@@ -877,6 +877,7 @@ Process {
 
     # read in the config file to memory
     $RawConfig = Get-Content $ConfigFile
+    $RawConfig = $RawConfig -replace ' --More--         '
 
     # these variables extract the switch hostname and IOS version they were pulled from the
     # $RawConfig so the script would fail faster if an invalid file was supplied as input
