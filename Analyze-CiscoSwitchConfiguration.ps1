@@ -26,10 +26,10 @@
 
     If there are incorrect config settings using both access and trunk commands and/or more complicated interface access/trunk config settings the logic of this code may be inaccurate and will require manual review.
 
-    Version 1.0.12
+    Version 1.0.13
     Sam Pursglove
     James Swineford
-    Last modified: 20 DEC 2019
+    Last modified: 29 January 2025
 #>
 
 [CmdletBinding(DefaultParameterSetName='FailOnly')]
@@ -878,6 +878,7 @@ Process {
     # read in the config file to memory
     $RawConfig = Get-Content $ConfigFile
     $RawConfig = $RawConfig -replace ' --More--         '
+    $RawConfig = $RawConfig -replace "^\s",""
 
     # these variables extract the switch hostname and IOS version they were pulled from the
     # $RawConfig so the script would fail faster if an invalid file was supplied as input
