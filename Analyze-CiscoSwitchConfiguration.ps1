@@ -5,6 +5,8 @@
     This script parses a plain text formatted Cisco switch configuration file and checks for specific security configuration entries.  It displays whether certain configuration requirements pass or fail the check.
 .PARAMETER ConfigFile
     The saved Cisco switch configuration file
+.PARAMETER RedSeal
+    Add additional config filtering based on the output format from RedSeal
 .PARAMETER FailOnly
     Outputs failed tests only; tests that pass or provide a warning are not displayed
 .PARAMETER FailWarningOnly
@@ -12,13 +14,17 @@
 .PARAMETER Output
     Set the analysis output delivery method: Excel (default), PowerShell console.  If Excel is not on the host system where the script it run it will not work using that output method.
 .EXAMPLE
-    Analyze-CiscoSwitchConfiguration.ps1 -ConfigFile cisco_config.txt
+    .\Analyze-CiscoSwitchConfiguration.ps1 -ConfigFile cisco_config.txt
     
     Analyze the Cisco switch configuration security settings.
 .EXAMPLE
     Get-ChildItem -Exclude *.ps1 | .\Analyze-CiscoSwitchConfiguration.ps1 
     
     This can be used to analyze multiple configs saved in a single directory.  The results for each switch are displayed in its own workbook sheet.
+.EXAMPLE
+    Get-ChildItem -Exclude *.ps1 | .\Analyze-CiscoSwitchConfiguration.ps1 -RedSeal
+
+    This can be used to analyze multiple configs saved in a single directory that were obtained from RedSeal.  The results for each switch are displayed in its own workbook sheet.
 .NOTES
     If Excel is not installed on the host system where the script is run that Output option will not work.  Use the 'Display' option for console output.
 
@@ -26,10 +32,10 @@
 
     If there are incorrect config settings using both access and trunk commands and/or more complicated interface access/trunk config settings the logic of this code may be inaccurate and will require manual review.
 
-    Version 1.0.13
+    Version 1.0.14
     Sam Pursglove
     James Swineford
-    Last modified: 29 January 2025
+    Last modified: 04 April 2025
 #>
 
 [CmdletBinding(DefaultParameterSetName='FailOnly')]
@@ -38,6 +44,9 @@ param (
     [Parameter(Position=0, Mandatory, ValueFromPipelineByPropertyName, HelpMessage='The saved config file of a Cisco switch')]
     [Alias('FullName','Name')]
     [string]$ConfigFile,
+
+    [Parameter(HelpMessage='Provide additional config file filtering to accomodate the RedSeal output format')]
+    [switch]$RedSeal,
 
     [Parameter(ParameterSetName='FailOnly', HelpMessage='Only display failed tests')]
     [switch]$FailOnly,
@@ -878,7 +887,11 @@ Process {
     # read in the config file to memory
     $RawConfig = Get-Content $ConfigFile
     $RawConfig = $RawConfig -replace ' --More--         '
-    $RawConfig = $RawConfig -replace "^\s",""
+    
+    # remove the preceeding single space from the RedSeal output file format
+    if($RedSeal) {
+        $RawConfig = $RawConfig -replace "^\s",""
+    }
 
     # these variables extract the switch hostname and IOS version they were pulled from the
     # $RawConfig so the script would fail faster if an invalid file was supplied as input
