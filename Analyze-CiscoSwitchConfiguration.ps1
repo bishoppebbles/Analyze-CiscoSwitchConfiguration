@@ -32,10 +32,10 @@
 
     If there are incorrect config settings using both access and trunk commands and/or more complicated interface access/trunk config settings the logic of this code may be inaccurate and will require manual review.
 
-    Version 1.0.14
+    Version 1.0.15
     Sam Pursglove
     James Swineford
-    Last modified: 04 April 2025
+    Last modified: 27 May 2025
 #>
 
 [CmdletBinding(DefaultParameterSetName='FailOnly')]
@@ -100,7 +100,7 @@ Begin {
         $Properties = @{}
 
         $SourceData | ForEach-Object { 
-            if ($_ -notmatch "^interface ((Ethernet|FastEthernet|GigabitEthernet|TenGigabitEthernet|Vlan).+$)" -and $Flag) {
+            if ($_ -notmatch "^interface ((Ethernet|FastEthernet|GigabitEthernet|TenGigabitEthernet|TwentyFiveGigE|FortyGigabitEthernet|Vlan).+$)" -and $Flag) {
 
                 $NoInterfaces.Add($_)
                 
