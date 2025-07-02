@@ -32,7 +32,7 @@
 
     If there are incorrect config settings using both access and trunk commands and/or more complicated interface access/trunk config settings the logic of this code may be inaccurate and will require manual review.
 
-    Version 1.0.16
+    Version 1.0.17
     Sam Pursglove
     James Swineford
     Last modified: 02 July 2025
@@ -941,10 +941,12 @@ Process {
         syslogServer=           Search-ConfigForValue "logging h?o?s?t? ?(\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3})" $Config.noInterfaces
         tftpServer=             Search-ConfigQuietly  "^tftp-server"                                    $Config.noInterfaces
         accessControlLists=     Search-ConfigForValue "^ip access-list \w+ (.+)"                        $Config.noInterfaces
-        #aaaAuthLocalEnabled=    Search-ConfigQuietly  "^aaa authentication login default local"         $Config.noInterfaces
-        #aaaAuthTacacsEnabled=   Search-ConfigQuietly  "^aaa authentication login default group tacacs+" $Config.noInterfaces
-        #tacacsServer=           Search-ConfigQuietly  "^tacacs-server host"                             $Config.noInterfaces
-        #tacacsServerIp=         Search-ConfigForValue "^tacacs-server host"                             $Config.noInterfaces
+        aaaAuthLogin=           Search-ConfigForvalue "^aaa authentication login (.+)"                 $Config.noInterfaces # need to integrate
+        aaaAuthEnable=          Search-ConfigForvalue "^aaa authentication enable (.+)"                $Config.noInterfaces # need to integrate
+        aaaAuthDot1x=           Search-ConfigForvalue "^aaa authentication dot1x (.+)"                 $Config.noInterfaces # need to integrate
+        aaaGroupServer=         Search-ConfigForvalue "^aaa group server (.+)"                         $Config.noInterfaces # need to integrate
+        tacacsServer=           Search-ConfigForValue "^tacacs server (.+)"                            $Config.noInterfaces # need to integrate as a separate section
+        tacacsServerIp=         Search-ConfigForValue "address ipv4 (\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3})"  $Config.noInterfaces # need to integrate as a separate section
     }
 
     #region test conditions
@@ -1332,9 +1334,9 @@ Process {
         $props = @{
             'Category'='SNMP'
             'Description'='v3 Group(s) configured for authPriv'
-            'State'='Fail'
+            'State'='Warning'
             'Value'='None'
-            'Comment'="To configure the SNMPv3 security mechanism, you link an SNMP view to a group and then link users to that group; the users define what authentication and encryption will be used."
+            'Comment'="If SNMPv3 is enabled the security mechanism is not configured for encryption and authentication. Link a SNMP view to a group and then link users to that group; the users define what authentication and encryption will be used."
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     }
@@ -1765,8 +1767,17 @@ Process {
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     }
 
-    # check if remote access authentication uses the local user database
-    if ($Vty0_4Data.LoginLocal) {
+    # check if remote access authentication uses AAA or the local user database
+    if ($CiscoConfig.aaaNewModel) {
+        $props = @{
+            'Category'='VTY 0-4'
+            'Description'='Login method'
+            'State'='Warning'
+            'Value'='AAA enabled'
+            'Comment'="Local database authentication is applied to the VTY lines by default.  The 'password', 'login', and 'login local' commands are ignored/disabled.  If present, review the 'aaa authentication' command(s) for modified authentication sources."
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+    } elseif ($Vty0_4Data.LoginLocal) {
         if ($Vty0_4Data.Password) {
             $props = @{
                 'Category'='VTY 0-4'
@@ -2007,8 +2018,17 @@ Process {
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     }
 
-    # check if remote access authentication uses the local user database
-    if ($Vty5_15Data.LoginLocal) {
+    # check if remote access authentication uses AAA or the local user database
+    if ($CiscoConfig.aaaNewModel) {
+        $props = @{
+            'Category'='VTY 5-15'
+            'Description'='Login method'
+            'State'='Warning'
+            'Value'='AAA enabled'
+            'Comment'="Local database authentication is applied to the VTY lines by default.  The 'password', 'login', and 'login local' commands are ignored/disabled.  If present, review the 'aaa authentication' command(s) for modified authentication sources."
+            }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+    } elseif ($Vty5_15Data.LoginLocal) {
         if ($Vty5_15Data.Password) {
             $props = @{
                 'Category'='VTY 5-15'
