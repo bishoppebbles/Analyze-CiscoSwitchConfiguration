@@ -32,10 +32,10 @@
 
     If there are incorrect config settings using both access and trunk commands and/or more complicated interface access/trunk config settings the logic of this code may be inaccurate and will require manual review.
 
-    Version 1.0.15
+    Version 1.0.16
     Sam Pursglove
     James Swineford
-    Last modified: 27 May 2025
+    Last modified: 02 July 2025
 #>
 
 [CmdletBinding(DefaultParameterSetName='FailOnly')]
@@ -107,8 +107,7 @@ Begin {
             } else {            
            
                 if ($_ -notmatch "!") {
-                    if ($_ -match "^interface (\w+)(\d\/\d{1,2}(\/\d{1,2})?)") {
-
+                    if ($_ -match "^interface (\w+)(\d\/\d{1,2}(\/\d{1,2})?)" -or $_ -match "^interface (FastEthernet)(0)$") {
                         $Properties.Add('InterfaceType',$Matches[1])
                         $Properties.Add('InterfaceNumber',$Matches[2])
                 
@@ -409,7 +408,8 @@ Begin {
                 }
                 
                 # check if the port is shutdown
-                if ($_.Shutdown -ne $null) {
+                # Removed the IP addressable Ethernet Fa0 and Gi0/0 out-of-band management ports from analysis inclusion, it is separated from other switch port traffic
+                if ($_.Shutdown -ne $null -and "$($_.InterfaceType)$($_.InterfaceNumber)" -notmatch "FastEthernet0$|GigabitEthernet0\/0$") {
                         
                     $CountShutInterfaces++
 
@@ -422,7 +422,7 @@ Begin {
                 # check if the switchport mode as been configured or if it is set to dynamic auto|desirable
                 # the default for not setting on newer switches is auto while desirable was for older ones
                 # note: if a dynamic switchport does not trunk it resorts to access mode
-                } elseif ($_.Mode -eq $null -or $_.Mode -eq 'dynamic') {
+                } elseif ($_.Mode -eq $null -or $_.Mode -eq 'dynamic' -and "$($_.InterfaceType)$($_.InterfaceNumber)" -notmatch "FastEthernet0$|GigabitEthernet0\/0$") {
 
                     $CountDynamicAutoDesirable++
 
