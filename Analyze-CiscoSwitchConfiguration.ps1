@@ -32,10 +32,10 @@
 
     If there are incorrect config settings using both access and trunk commands and/or more complicated interface access/trunk config settings the logic of this code may be inaccurate and will require manual review.
 
-    Version 1.0.17
+    Version 1.0.18
     Sam Pursglove
     James Swineford
-    Last modified: 02 July 2025
+    Last modified: 03 July 2025
 #>
 
 [CmdletBinding(DefaultParameterSetName='FailOnly')]
@@ -164,7 +164,8 @@ Begin {
                     
                         $Properties.Add('BpduGuard',$true)
 
-                    } elseif ($_ -match "shutdown$") {
+                    # matches "shutdown" but not "no shutdown"
+                    } elseif ($_ -match "(?<!no\s)shutdown$") {
                     
                         $Properties.Add('Shutdown',$true)
                     }
@@ -266,6 +267,8 @@ Begin {
                 $Properties.Add('TransportPref',$Matches[1])
             } elseif ($line -match "transport output (\w+)$") {
                 $Properties.Add('TransportOut',$Matches[1])
+            } elseif ($line -match "login authentication") {
+                $Properties.Add('loginAuth',$true)
             }
         }
 
@@ -273,7 +276,7 @@ Begin {
     }
 
 
-    # parse the line vty 0 4 and 5 15 sections of the config
+    # parse the line vty 0 4, 5 15, and 16 31 sections of the config
     function Extract-VTY0-4Section {
         param ($SourceData)
 
@@ -334,7 +337,7 @@ Begin {
                 continue
             }
 
-            #handle edge case of finding our  line
+            #handle edge case of finding our line
             if ($line -match "^line vty 5 15$") {
                 $Skip = $false
                 continue
@@ -371,6 +374,60 @@ Begin {
 
         New-Object -TypeName psobject -Property $Properties
     }
+
+
+    function Extract-VTY16-31Section {
+        param ($SourceData)
+
+        $Properties = @{}
+        $Skip = $true
+        $Properties.Add('Exists',$false)  # track if vty 16 31 is present as it's only common on some newer switches
+
+        foreach ($line in $SourceData) {
+            #skip everything until we get to the line
+            if ($Skip -and $line -notmatch "^line vty 16 31$") {
+                continue
+            }
+
+            #handle edge case of finding our line
+            if ($line -match "^line vty 16 31$") {
+                $Skip = $false
+                $Properties['Exists'] = $true
+                continue
+            }
+
+            $Skip = $false
+
+            #watch for new section, break out if it occurs
+            if (-not ($line.startswith(" "))) {
+                break
+            }
+
+            # extract config settings
+            if ($line -match "logging synchronous$") {
+                $Properties.Add('LoggingSync',$true)
+            } elseif ($line -match "exec-timeout (\d{1,5})\s?(\d{0,6})") {
+                $Properties.Add('ExecTimeout',([int]$Matches[1]*60+[int]$Matches[2]))
+            } elseif ($line -match "login$") {
+                $Properties.Add('Login',$true)
+            } elseif ($line -match "password") {
+                $Properties.Add('Password',$true)
+            } elseif ($line -match "login local$") {
+                $Properties.Add('LoginLocal',$true)
+            } elseif ($line -match "access-class (.+) in") {
+                $Properties.Add('AclIn',$Matches[1])
+            } elseif ($line -match "transport preferred (\w+)$") {
+                $Properties.Add('TransportPref',$Matches[1])
+            } elseif ($line -match "transport output (\w+)$") {
+                $Properties.Add('TransportOut',$Matches[1])
+            } elseif ($line -match "transport input (\w+)$") {
+                $Properties.Add('TransportIn',$Matches[1])
+            }
+        }
+
+        New-Object -TypeName psobject -Property $Properties
+    }
+
 
     # looks at the access and/or trunk configuration settings for each interface and
     # prints out information related to various settings like the physical interface
@@ -880,6 +937,7 @@ Begin {
 
 }
 
+
 Process {
 
     Write-Progress "Processing $($ConfigFile.Split('\')[-1])..."
@@ -915,6 +973,7 @@ Process {
     $ConsoleData=                 Extract-ConSection            $Config.noInterfaces
     $Vty0_4Data=                  Extract-Vty0-4Section         $Config.noInterfaces
     $Vty5_15Data=                 Extract-Vty5-15Section        $Config.noInterfaces
+    $Vty16_31Data=                Extract-Vty16-31Section       $Config.noInterfaces
     $AccessTrunk=                 Analyze-AccessTrunkInterfaces $Config.interfaces
     $NonSticky=                   Analyze-PortSecuritySticky    $Config.interfaces
     $PortSecurityMaxCount=        Analyze-PortSecurityMax       $Config.interfaces
@@ -941,11 +1000,12 @@ Process {
         syslogServer=           Search-ConfigForValue "logging h?o?s?t? ?(\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3})" $Config.noInterfaces
         tftpServer=             Search-ConfigQuietly  "^tftp-server"                                    $Config.noInterfaces
         accessControlLists=     Search-ConfigForValue "^ip access-list \w+ (.+)"                        $Config.noInterfaces
-        aaaAuthLogin=           Search-ConfigForvalue "^aaa authentication login (.+)"                 $Config.noInterfaces # need to integrate
-        aaaAuthEnable=          Search-ConfigForvalue "^aaa authentication enable (.+)"                $Config.noInterfaces # need to integrate
-        aaaAuthDot1x=           Search-ConfigForvalue "^aaa authentication dot1x (.+)"                 $Config.noInterfaces # need to integrate
-        aaaGroupServer=         Search-ConfigForvalue "^aaa group server (.+)"                         $Config.noInterfaces # need to integrate
-        tacacsServer=           Search-ConfigForValue "^tacacs server (.+)"                            $Config.noInterfaces # need to integrate as a separate section
+        aaaAuthLogin=           Search-ConfigForvalue "^aaa authentication login (.+)"                  $Config.noInterfaces # need to integrate
+        aaaAuthEnable=          Search-ConfigForvalue "^aaa authentication enable (.+)"                 $Config.noInterfaces # need to integrate
+        aaaGroupServer=         Search-ConfigForvalue "^aaa group server (.+)"                          $Config.noInterfaces # need to integrate
+        aaaAuthDot1x=           Search-ConfigForvalue "^aaa authentication dot1x (.+)"                  $Config.noInterfaces # need to integrate
+        dot1xSysAuthControl=    Search-ConfigQuietly  "^dot1x system-auth-control"                      $Config.noInterfaces # need to integrate
+        tacacsServer=           Search-ConfigForValue "^tacacs server (.+)"                             $Config.noInterfaces # need to integrate as a separate section
         tacacsServerIp=         Search-ConfigForValue "address ipv4 (\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3})"  $Config.noInterfaces # need to integrate as a separate section
     }
 
@@ -1724,8 +1784,9 @@ Process {
     }
     #endregion console analysis
 
-    #region VTY analysis
 
+    #region VTY analysis
+    # VTY 0 4 section
     if ($Vty0_4Data.LoggingSync) {
         $props = @{
             'Category'='VTY 0-4'
@@ -1986,6 +2047,8 @@ Process {
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     }
 
+
+    # VTY 5 15 section
     if ($Vty5_15Data.LoggingSync) {
         $props = @{
             'Category'='VTY 5-15'
@@ -2244,6 +2307,336 @@ Process {
             'Comment'=''
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+    }
+
+
+    # VTY 16 31 section
+    # Confirm if vty 16 31 exists as it is only present on newer switches
+    if ($Vty16_31Data.Exists -eq $false) {
+        $props = @{
+            'Category'='VTY 16-31'
+            'Description'='Logging synchronous'
+            'State'='None'
+            'Value'=''
+            'Comment'='Section vty 16 31 does not exist'
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+
+        $props = @{
+            'Category'='VTY 16-31'
+            'Description'='Timeout'
+            'State'='None'
+            'Value'=''
+            'Comment'='Section vty 16 31 does not exist'
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+
+
+        $props = @{
+            'Category'='VTY 16-31'
+            'Description'='Login method'
+            'State'='None'
+            'Value'=''
+            'Comment'='Section vty 16 31 does not exist'
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+
+        $props = @{
+                'Category'='VTY 16-31'
+                'Description'='Remote access'
+                'State'='None'
+                'Value'=''
+                'Comment'='Section vty 16 31 does not exist'
+            }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+
+        $props = @{
+            'Category'='VTY 16-31'
+            'Description'='Transport input'
+            'State'='None'
+            'Value'=''
+            'Comment'='Section vty 16 31 does not exist'
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+
+        $props = @{
+            'Category'='VTY 16-31'
+            'Description'='Transport output'
+            'State'='None'
+            'Value'=''
+            'Comment'='Section vty 16 31 does not exist'
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+
+        $props = @{
+            'Category'='VTY 16-31'
+            'Description'='Transport preferred'
+            'State'='None'
+            'Value'=''
+            'Comment'='Section vty 16 31 does not exist'
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+
+    } else {
+        if ($Vty16_31Data.LoggingSync) {
+            $props = @{
+                'Category'='VTY 16-31'
+                'Description'='Logging synchronous'
+                'State'='Pass'
+                'Value'='Enabled'
+                'Comment'=''
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        } else {
+            $props = @{
+                'Category'='VTY 16-31'
+                'Description'='Logging synchronous'
+                'State'='Warning'
+                'Value'='Disabled'
+                'Comment'="Enable logging synchronous for clearer console output."
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        }
+
+        # check if the idle session timeout is 20 minutes or less
+        if (!$Vty16_31Data.ExecTimeout) {
+            $props = @{
+                'Category'='VTY 16-31'
+                'Description'='Timeout'
+                'State'='Pass'
+                'Value'='Default (10 minutes)'
+                'Comment'=''
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        } elseif ($Vty16_31Data.ExecTimeout -gt 1200) {
+            $props = @{
+                'Category'='VTY 16-31'
+                'Description'='Timeout'
+                'State'='Fail'
+                'Value'="$($Vty16_31Data.ExecTimeout) seconds"
+                'Comment'="VTY 16-31 timeout must be less than 1200 seconds"
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        } else {
+            $props = @{
+                'Category'='VTY 16-31'
+                'Description'='Timeout'
+                'State'='Pass'
+                'Value'="$($Vty16_31Data.ExecTimeout) seconds"
+                'Comment'=''
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        }
+
+        # check if remote access authentication uses AAA or the local user database
+        if ($CiscoConfig.aaaNewModel) {
+            $props = @{
+                'Category'='VTY 16-31'
+                'Description'='Login method'
+                'State'='Warning'
+                'Value'='AAA enabled'
+                'Comment'="Local database authentication is applied to the VTY lines by default.  The 'password', 'login', and 'login local' commands are ignored/disabled.  If present, review the 'aaa authentication' command(s) for modified authentication sources."
+                }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        } elseif ($Vty16_31Data.LoginLocal) {
+            if ($Vty16_31Data.Password) {
+                $props = @{
+                    'Category'='VTY 16-31'
+                    'Description'='Login method'
+                    'State'='Warning'
+                    'Value'='Login Local and password'
+                    'Comment'="If both commands are set the 'login local' command overrides 'password' and is not used. If the 'login local' command is replaced with the 'login' command user authentication from the local database will no longer be used and the password set via the 'password' command will be active.  Remove the 'password' command using 'no' variant."
+                }
+                $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+            } else {
+                $props = @{
+                    'Category'='VTY 16-31'
+                    'Description'='Login method'
+                    'State'='Pass'
+                    'Value'='Login Local only'
+                    'Comment'=''
+                }
+                $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+            }
+        } elseif ($Vty16_31Data.Login) {
+            if ($Vty16_31Data.Password) {
+                $props = @{
+                    'Category'='VTY 16-31'
+                    'Description'='Login method'
+                    'State'='Fail'
+                    'Value'='Login and password'
+                    'Comment'="The 'login' command must be replaced with the 'login local' command to authenticate against the local user database.  The 'password' command should be removed using the 'no' variant."
+                }
+                $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+            } else {
+                $props = @{
+                    'Category'='VTY 16-31'
+                    'Description'='Login method'
+                    'State'='Fail'
+                    'Value'='Login only'
+                    'Comment'="The 'login' command must be replaced with the 'login local' command."
+                }
+                $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+            }
+        } else {
+            if ($Vty16_31Data.Password) {
+                $props = @{
+                    'Category'='VTY 16-31'
+                    'Description'='Login method'
+                    'State'='Fail'
+                    'Value'='Password only'
+                    'Comment'="The password command is set but but inactive without the 'login' command; it must be replaced with the 'login local' command to authenticate against the local user database.  The 'password' command must be removed using the 'no' variant."
+                }
+                $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+            } else {
+                $props = @{
+                    'Category'='VTY 16-31'
+                    'Description'='Login method'
+                    'State'='Fail'
+                    'Value'='No configuration'
+                    'Comment'="VTY lines have no configuration.  Enable remote access using the local user database with the 'login local' command."
+                }
+                $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+            }
+        }
+
+        # check if an ACL is applied to restrict remote access to specified IPs
+        if ($Vty16_31Data.AclIn) {
+            $props = @{
+                'Category'='VTY 16-31'
+                'Description'='Remote access'
+                'State'='Pass'
+                'Value'=$Vty16_31Data.AclIn
+                'Comment'=''
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        } elseif ($Vty16_31Data.TransportIn -like "none") {
+            $props = @{
+                'Category'='VTY 16-31'
+                'Description'='Remote access'
+                'State'='Pass'
+                'Value'='Remote access disabled'
+                'Comment'=''
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        } else {
+            $props = @{
+                'Category'='VTY 16-31'
+                'Description'='Remote access'
+                'State'='Fail'
+                'Value'='Remote access enabled but not restricted to ACL'
+                'Comment'="To limit remote access create an ACL and run the 'access-class <ACL> in' command on the VTY lines"
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        }
+
+        # check the transport input setting
+        if ($Vty16_31Data.TransportIn -like "ssh") {
+            $props = @{
+                'Category'='VTY 16-31'
+                'Description'='Transport input'
+                'State'='Pass'
+                'Value'='SSH'
+                'Comment'=''
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        } elseif ($Vty16_31Data.TransportIn -like "none") {
+            $props = @{
+                'Category'='VTY 16-31'
+                'Description'='Transport input'
+                'State'='Pass'
+                'Value'='Explicitly denied'
+                'Comment'=''
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        } elseif (!$Vty16_31Data.TransportIn) {
+            $props = @{
+                'Category'='VTY 16-31'
+                'Description'='Transport input'
+                'State'='Fail'
+                'Value'='Not configured'
+                'Comment'=''
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        } else {
+            $props = @{
+                'Category'='VTY 16-31'
+                'Description'='Transport input'
+                'State'='Fail'
+                'Value'=$Vty16_31Data.TransportIn
+                'Comment'=''
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        }
+
+        # check the transport output setting
+        if ($Vty16_31Data.TransportOut -like "ssh") {
+            $props = @{
+                'Category'='VTY 16-31'
+                'Description'='Transport output'
+                'State'='Pass'
+                'Value'='SSH'
+                'Comment'=''
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        } elseif (!$Vty16_31Data.TransportOut) {
+            $props = @{
+                'Category'='VTY 16-31'
+                'Description'='Transport output'
+                'State'='Warning'
+                'Value'='Not configured'
+                'Comment'=''
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        } else {
+            $props = @{
+                'Category'='VTY 16-31'
+                'Description'='Transport output'
+                'State'='Warning'
+                'Value'=$Vty16_31Data.TransportOut
+                'Comment'=''
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        }
+
+        # check the transport preferred setting
+        if (!$Vty16_31Data.TransportPref -and !$Vty16_31Data.TransportIn) {
+            $props = @{
+                'Category'='VTY 16-31'
+                'Description'='Transport preferred'
+                'State'='Warning'
+                'Value'='Default (telnet)'
+                'Comment'="The transport preferred setting controls which protocol is used if it is not explicitly set. To avoid inadvertant telnet connections set the transport to 'none', 'ssh', or explicity set the transport output."
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        } elseif ($Vty16_31Data.TransportPref -like "telnet") {
+            $props = @{
+                'Category'='VTY 16-31'
+                'Description'='Transport preferred'
+                'State'='Warning'
+                'Value'='Telnet'
+                'Comment'="The transport preferred setting controls which protocol is used if it is not explicitly set. Set this to 'none', 'ssh', or explicity set the transport output."
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        } elseif ($Vty16_31Data.TransportPref -like "none") {
+            $props = @{
+                'Category'='VTY 16-31'
+                'Description'='Transport preferred'
+                'State'='Pass'
+                'Value'='None'
+                'Comment'=''
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        } elseif ($Vty16_31Data.TransportPref) {
+            $props = @{
+                'Category'='VTY 16-31'
+                'Description'='Transport preferred'
+                'State'='Pass'
+                'Value'='SSH'
+                'Comment'=''
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        }
     }
     #endregion vty analysis
 
