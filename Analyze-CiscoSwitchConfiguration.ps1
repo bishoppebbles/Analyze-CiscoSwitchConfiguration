@@ -1703,6 +1703,15 @@ Process {
             'Comment'="The transport preferred setting controls which protocol is used if it is not explicitly set. Set this to 'none', 'ssh', or explicity set the transport output."
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+    } elseif ($ConsoleData.TransportPref -like "none") {
+        $props = @{
+            'Category'='Console'
+            'Description'='Transport preferred'
+            'State'='Pass'
+            'Value'='None'
+            'Comment'=''
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     } elseif ($ConsoleData.TransportPref) {
         $props = @{
             'Category'='Console'
@@ -1957,6 +1966,15 @@ Process {
             'Comment'="The transport preferred setting controls which protocol is used if it is not explicitly set. Set this to 'none', 'ssh', or explicity set the transport output."
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+    } elseif ($Vty0_4Data.TransportPref -like "none") {
+        $props = @{
+            'Category'='VTY 0-4'
+            'Description'='Transport preferred'
+            'State'='Pass'
+            'Value'='None'
+            'Comment'=''
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     } elseif ($Vty0_4Data.TransportPref) {
         $props = @{
             'Category'='VTY 0-4'
@@ -2206,6 +2224,15 @@ Process {
             'State'='Warning'
             'Value'='Telnet'
             'Comment'="The transport preferred setting controls which protocol is used if it is not explicitly set. Set this to 'none', 'ssh', or explicity set the transport output."
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+    } elseif ($Vty5_15Data.TransportPref -like "none") {
+        $props = @{
+            'Category'='VTY 5-15'
+            'Description'='Transport preferred'
+            'State'='Pass'
+            'Value'='None'
+            'Comment'=''
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     } elseif ($Vty5_15Data.TransportPref) {
