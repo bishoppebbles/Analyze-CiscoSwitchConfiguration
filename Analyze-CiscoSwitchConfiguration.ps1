@@ -32,10 +32,10 @@
 
     If there are incorrect config settings using both access and trunk commands and/or more complicated interface access/trunk config settings the logic of this code may be inaccurate and will require manual review.
 
-    Version 1.0.18
+    Version 1.0.19
     Sam Pursglove
     James Swineford
-    Last modified: 03 July 2025
+    Last modified: 15 July 2025
 #>
 
 [CmdletBinding(DefaultParameterSetName='FailOnly')]
@@ -267,8 +267,8 @@ Begin {
                 $Properties.Add('TransportPref',$Matches[1])
             } elseif ($line -match "transport output (\w+)$") {
                 $Properties.Add('TransportOut',$Matches[1])
-            } elseif ($line -match "login authentication") {
-                $Properties.Add('loginAuth',$true)
+            } elseif ($line -match "login authentication (\w+)") {
+                $Properties.Add('LoginAuth',$Matches[1])
             }
         }
 
@@ -826,6 +826,9 @@ Begin {
         $objSheetResults.Range('$A:$E').FormatConditions.Add(1,3,'="Warning"') | Out-Null
         $objSheetResults.Range('$A:$E').FormatConditions.Item(2).Font.Color = 26012
         $objSheetResults.Range('$A:$E').FormatConditions.Item(2).Interior.Color = 10284031
+        $objSheetResults.Range('$A:$E').FormatConditions.Add(1,3,'="Notice"') | Out-Null
+        $objSheetResults.Range('$A:$E').FormatConditions.Item(3).Font.Color = 6375440
+        $objSheetResults.Range('$A:$E').FormatConditions.Item(3).Interior.Color = 16764006
         
         # populate the general info sheet
         $output = "$switch`n"
@@ -986,7 +989,6 @@ Process {
         enablePassword=         Search-ConfigQuietly  "^enable password .+$"                            $Config.noInterfaces
         userAccountsSecret=     Search-ConfigForValue "^username (\w+) .*secret .+$"                    $Config.noInterfaces
         userAccountsPassword=   Search-ConfigForValue "^username (\w+) .*password .+$"                  $Config.noInterfaces
-        aaaNewModel=            Search-ConfigQuietly  "^aaa new-model$"                                 $Config.noInterfaces
         sshV2=                  Search-ConfigQuietly  "^ip ssh version 2$"                              $Config.noInterfaces
         sshAuthRetry=           Search-ConfigForValue "^ip ssh authentication-retries (\d)$"            $Config.noInterfaces
         sshTimeout=             Search-ConfigForValue "^ip ssh timeout (\d{1,3})$"                      $Config.noInterfaces
@@ -1000,9 +1002,10 @@ Process {
         syslogServer=           Search-ConfigForValue "logging h?o?s?t? ?(\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3})" $Config.noInterfaces
         tftpServer=             Search-ConfigQuietly  "^tftp-server"                                    $Config.noInterfaces
         accessControlLists=     Search-ConfigForValue "^ip access-list \w+ (.+)"                        $Config.noInterfaces
-        aaaAuthLogin=           Search-ConfigForvalue "^aaa authentication login (.+)"                  $Config.noInterfaces # need to integrate
-        aaaAuthEnable=          Search-ConfigForvalue "^aaa authentication enable (.+)"                 $Config.noInterfaces # need to integrate
-        aaaGroupServer=         Search-ConfigForvalue "^aaa group server (.+)"                          $Config.noInterfaces # need to integrate
+        aaaNewModel=            Search-ConfigQuietly  "^aaa new-model$"                                 $Config.noInterfaces
+        aaaAuthLogin=           Search-ConfigForvalue "^aaa authentication login (.+)$"                 $Config.noInterfaces # need to integrate
+        aaaAuthEnable=          Search-ConfigForvalue "^aaa authentication enable (.+)$"                $Config.noInterfaces # need to integrate
+        aaaGroupServer=         Search-ConfigForvalue "^aaa group server (.+)$"                         $Config.noInterfaces # need to integrate
         aaaAuthDot1x=           Search-ConfigForvalue "^aaa authentication dot1x (.+)"                  $Config.noInterfaces # need to integrate
         dot1xSysAuthControl=    Search-ConfigQuietly  "^dot1x system-auth-control"                      $Config.noInterfaces # need to integrate
         tacacsServer=           Search-ConfigForValue "^tacacs server (.+)"                             $Config.noInterfaces # need to integrate as a separate section
@@ -1208,25 +1211,68 @@ Process {
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     }
 
-    # check is aaa is enabled
+    # check is aaa is enabled (aaa new-model)
     if ($CiscoConfig.aaaNewModel) {
         $props = @{
-            'Category'='Server'
-            'Description'='AAA'
+            'Category'='AAA'
+            'Description'='Authentication, Authorization, Accounting'
             'State'='Pass'
             'Value'='Enabled'
             'Comment'="Console and VTY line analysis maybe inaccurate as it does not consider 'aaa new-model' authentication methods"
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
+
+        # aaa authentication login check with AAA
+        if ($CiscoConfig.aaaAuthLogin) {
+            $props = @{
+                'Category'='AAA'
+                'Description'='Global login authentication'
+                'State'='Notice'
+                'Value'=$($CiscoConfig.aaaAuthLogin | Out-String)
+                'Comment'="Global login authenticataion is configured with this sequence of authentication methods"
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        } else {
+            $props = @{
+                'Category'='AAA'
+                'Description'='Global login authentication'
+                'State'='Fail'
+                'Value'='Not configured'
+                'Comment'="AAA is enabled but global login authenticataion is not configured"
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        }
+
+        # aaa authentication enable check with AAA
+        if ($CiscoConfig.aaaAuthEnable) {
+            $props = @{
+                'Category'='AAA'
+                'Description'='Global enable authentication'
+                'State'='Notice'
+                'Value'=$($CiscoConfig.aaaAuthEnable | Out-String)
+                'Comment'="Global enable authentication is configured with this sequence of authentication methods"
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        } else {
+            $props = @{
+                'Category'='AAA'
+                'Description'='Global enable authentication'
+                'State'='Fail'
+                'Value'='Not configured'
+                'Comment'="AAA is enabled but global enable authentication is not configured"
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        }
+
     } else {
         $props = @{
-            'Category'='Server'
-            'Description'='AAA'
-            'State'='Warning'
+            'Category'='AAA'
+            'Description'='Authentication, Authorization, Accounting'
+            'State'='Notice'
             'Value'='Disabled'
             'Comment'='Authentication, Authorization, and, Accounting (AAA) is disabled'
         }
-        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     }
 
     # check if the HTTP web management server is enabled
@@ -1614,7 +1660,7 @@ Process {
         $props = @{
             'Category'='Console'
             'Description'='Logging synchronous'
-            'State'='Warning'
+            'State'='Notice'
             'Value'='Disabled'
             'Comment'="Enable logging synchronous for clearer console output."
         }
@@ -1651,8 +1697,30 @@ Process {
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     }
 
-    # check if console access authentication uses the local user database
-    if ($ConsoleData.LoginLocal) {
+    # check if console access authentication uses AAA or the local user database
+    if ($CiscoConfig.aaaNewModel) {
+
+        # authentication login
+        if ($ConsoleData.LoginAuth) {
+            $props = @{
+                'Category'='Console'
+                'Description'='Login method'
+                'State'='Pass'
+                'Value'=$($ConsoleData.LoginAuth | Out-String)
+                'Comment'='AAA is enabled and the console is configured for AAA authentication login'
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        } else {
+            $props = @{
+                'Category'='Console'
+                'Description'='Login method'
+                'State'='Fail'
+                'Value'=''
+                'Comment'='AAA is enabled but the console is not configured for AAA authentication login'
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        }
+    } elseif ($ConsoleData.LoginLocal) {
         if ($ConsoleData.Password) {
             $props = @{
                 'Category'='Console'
@@ -1800,7 +1868,7 @@ Process {
         $props = @{
             'Category'='VTY 0-4'
             'Description'='Logging synchronous'
-            'State'='Warning'
+            'State'='Notice'
             'Value'='Disabled'
             'Comment'="Enable logging synchronous for clearer console output."
         }
@@ -1842,7 +1910,7 @@ Process {
         $props = @{
             'Category'='VTY 0-4'
             'Description'='Login method'
-            'State'='Warning'
+            'State'='Notice'
             'Value'='AAA enabled'
             'Comment'="Local database authentication is applied to the VTY lines by default.  The 'password', 'login', and 'login local' commands are ignored/disabled.  If present, review the 'aaa authentication' command(s) for modified authentication sources."
         }
@@ -2062,7 +2130,7 @@ Process {
         $props = @{
             'Category'='VTY 5-15'
             'Description'='Logging synchronous'
-            'State'='Warning'
+            'State'='Notice'
             'Value'='Disabled'
             'Comment'="Enable logging synchronous for clearer console output."
         }
@@ -2104,7 +2172,7 @@ Process {
         $props = @{
             'Category'='VTY 5-15'
             'Description'='Login method'
-            'State'='Warning'
+            'State'='Notice'
             'Value'='AAA enabled'
             'Comment'="Local database authentication is applied to the VTY lines by default.  The 'password', 'login', and 'login local' commands are ignored/disabled.  If present, review the 'aaa authentication' command(s) for modified authentication sources."
             }
@@ -2311,73 +2379,8 @@ Process {
 
 
     # VTY 16 31 section
-    # Confirm if vty 16 31 exists as it is only present on newer switches
-    if ($Vty16_31Data.Exists -eq $false) {
-        $props = @{
-            'Category'='VTY 16-31'
-            'Description'='Logging synchronous'
-            'State'='None'
-            'Value'=''
-            'Comment'='Section vty 16 31 does not exist'
-        }
-        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
-
-        $props = @{
-            'Category'='VTY 16-31'
-            'Description'='Timeout'
-            'State'='None'
-            'Value'=''
-            'Comment'='Section vty 16 31 does not exist'
-        }
-        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
-
-
-        $props = @{
-            'Category'='VTY 16-31'
-            'Description'='Login method'
-            'State'='None'
-            'Value'=''
-            'Comment'='Section vty 16 31 does not exist'
-        }
-        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
-
-        $props = @{
-                'Category'='VTY 16-31'
-                'Description'='Remote access'
-                'State'='None'
-                'Value'=''
-                'Comment'='Section vty 16 31 does not exist'
-            }
-        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
-
-        $props = @{
-            'Category'='VTY 16-31'
-            'Description'='Transport input'
-            'State'='None'
-            'Value'=''
-            'Comment'='Section vty 16 31 does not exist'
-        }
-        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
-
-        $props = @{
-            'Category'='VTY 16-31'
-            'Description'='Transport output'
-            'State'='None'
-            'Value'=''
-            'Comment'='Section vty 16 31 does not exist'
-        }
-        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
-
-        $props = @{
-            'Category'='VTY 16-31'
-            'Description'='Transport preferred'
-            'State'='None'
-            'Value'=''
-            'Comment'='Section vty 16 31 does not exist'
-        }
-        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
-
-    } else {
+    # Confirm if vty 16 31 exists as it is only present on newer switches; if so, assess   
+    if ($Vty16_31Data.Exists -eq $true) {
         if ($Vty16_31Data.LoggingSync) {
             $props = @{
                 'Category'='VTY 16-31'
@@ -2391,7 +2394,7 @@ Process {
             $props = @{
                 'Category'='VTY 16-31'
                 'Description'='Logging synchronous'
-                'State'='Warning'
+                'State'='Notice'
                 'Value'='Disabled'
                 'Comment'="Enable logging synchronous for clearer console output."
             }
@@ -2433,7 +2436,7 @@ Process {
             $props = @{
                 'Category'='VTY 16-31'
                 'Description'='Login method'
-                'State'='Warning'
+                'State'='Notice'
                 'Value'='AAA enabled'
                 'Comment'="Local database authentication is applied to the VTY lines by default.  The 'password', 'login', and 'login local' commands are ignored/disabled.  If present, review the 'aaa authentication' command(s) for modified authentication sources."
                 }
