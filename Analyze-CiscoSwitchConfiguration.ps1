@@ -38,7 +38,7 @@
 
     The Decrypt-Type7 function decodes Cisco's type 7 weak "encryption" and displays the plaintext password. It was ported by John Savu (with some code cleanup) from theevilbit's python script (https://github.com/theevilbit/ciscot7) which was released under the MIT license.
     
-    Version 1.0.21
+    Version 1.0.22
     Sam Pursglove
     James Swineford
     John Savu (Decrypt-Type7 function)
@@ -1070,6 +1070,8 @@ Process {
         sshAuthRetry=           Search-ConfigForValue "^ip ssh authentication-retries (\d)$"            $Config.noInterfaces
         sshTimeout=             Search-ConfigForValue "^ip ssh timeout (\d{1,3})$"                      $Config.noInterfaces
         loginBanner=            Search-ConfigForValue "^banner (motd|login).+$"                         $Config.noInterfaces
+        loginFailureLog=        Search-ConfigQuietly  "^login on-failure log"                           $Config.noInterfaces
+        loginSuccessLog=        Search-ConfigQuietly  "^login on-success log"                           $Config.noInterfaces
         snmpV2ReadOnly=         Search-ConfigQuietly  "^snmp-server community .+ RO"                    $Config.noInterfaces
         snmpV2ReadOnlyAcl=      Search-ConfigForValue "^snmp-server community .+ RO (.*)$"              $Config.noInterfaces
         snmpV2ReadWrite=        Search-ConfigQuietly  "^snmp-server community .+ RW"                    $Config.noInterfaces
@@ -1243,6 +1245,48 @@ Process {
             'State'='Fail'
             'Value'='No login or MOTD'
             'Comment'="The configuration does not include a login and/or motd banner.  Add the approved warning banner text."
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
+    }
+
+    # check if failed login attempts are logged
+    if ($CiscoConfig.loginFailureLog) {
+        $props = @{
+            'Category'='General'
+            'Description'='Login failure logging'
+            'State'='Pass'
+            'Value'=''
+            'Comment'="Failed login attempts are logged."
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
+    } else {
+        $props = @{
+            'Category'='General'
+            'Description'='Login failure logging'
+            'State'='Fail'
+            'Value'=''
+            'Comment'="Failed login attempts are not logged."
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
+    }
+
+    # check if successful login attempts are logged
+    if ($CiscoConfig.loginSuccessLog) {
+        $props = @{
+            'Category'='General'
+            'Description'='Login success logging'
+            'State'='Pass'
+            'Value'=''
+            'Comment'="Successful login attempts are logged."
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
+    } else {
+        $props = @{
+            'Category'='General'
+            'Description'='Login success logging'
+            'State'='Fail'
+            'Value'=''
+            'Comment'="Successful login attempts are not logged."
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     }
@@ -2800,15 +2844,6 @@ TODO:
               logging enable
               notify syslog contenttype plaintext
               hidekeys
-
-    Log all Denied Attempts
-        All attempts to any port, protocol, or service that is denied shall be logged. Use example of denied traffic
-            login block-for 120 attempts 3 within 30
-            login on-failure log
-
-    Log all attempts to establish a management connection for administrative access.
-        Configure the device to log all access attempts to the device to establish a management connection for administrative access.
-            login on-success log
 
     Authenticate all NTP messages received from NTP servers and peers
         Configure the device to authenticate all received NTP messages using either PKI (supported in NTP v4) or a FIPS compliant message authentication code algorithm.
