@@ -38,11 +38,11 @@
 
     The Decrypt-Type7 function decodes Cisco's type 7 weak "encryption" and displays the plaintext password. It was ported by John Savu (with some code cleanup) from theevilbit's python script (https://github.com/theevilbit/ciscot7) which was released under the MIT license.
     
-    Version 1.0.20
+    Version 1.0.21
     Sam Pursglove
     James Swineford
     John Savu (Decrypt-Type7 function)
-    Last modified: 15 July 2025
+    Last modified: 17 July 2025
 #>
 
 [CmdletBinding(DefaultParameterSetName='FailOnly')]
@@ -1008,6 +1008,16 @@ Process {
         exit
     }
 
+    $ciscoEncryptTypes = @{
+	    0='unencrypted'
+	    4='SHA-256'
+	    5='MD5'
+	    7='Vigenere Cipher'
+	    6='AES 128'
+	    8='PBKDF2-SHA-256'
+	    9='SCRYPT'
+    }
+
     Write-Progress "Processing $($ConfigFile.Split('\')[-1])..."
 
     # read in the config file to memory
@@ -1054,6 +1064,8 @@ Process {
         enablePassword=         Search-ConfigQuietly  "^enable password .+$"                            $Config.noInterfaces
         userAccountsSecret=     Search-ConfigForValue "^username (\w+) .*secret .+$"                    $Config.noInterfaces
         userAccountsPassword=   Search-ConfigForValue "^username (\w+) .*password .+$"                  $Config.noInterfaces
+        userAccountsEncType=    Search-ConfigForValue "^username \w+ .*secret (\d) .+$"                 $Config.noInterfaces
+        enableEncType=          Search-ConfigForValue "^enable secret (\d) .+$"                         $Config.noInterfaces
         sshV2=                  Search-ConfigQuietly  "^ip ssh version 2$"                              $Config.noInterfaces
         sshAuthRetry=           Search-ConfigForValue "^ip ssh authentication-retries (\d)$"            $Config.noInterfaces
         sshTimeout=             Search-ConfigForValue "^ip ssh timeout (\d{1,3})$"                      $Config.noInterfaces
@@ -1112,7 +1124,7 @@ Process {
         $props = @{
             'Category'='General'
             'Description'='Service password encryption'
-            'State'='Pass'
+            'State'='Notice'
             'Value'='Enabled'
             'Comment'=''
         }
@@ -1121,7 +1133,7 @@ Process {
         $props = @{
             'Category'='General'
             'Description'='Service password encryption'
-            'State'='Fail'
+            'State'='Warning'
             'Value'='Disabled'
             'Comment'="Enable the 'service password-encryption' command if other stronger forms of encryption are not available. This encryption is reversible."
         }
@@ -1189,6 +1201,29 @@ Process {
             'Comment'="All local user accunts should be stored with the strongest form of encryption using the the command 'username <user> secret <password>'"
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
+    }
+
+    # display the enable and username secret password encryption types in use
+    if ($CiscoConfig.userAccountsEncType) {
+        $props = @{
+            'Category'='General'
+            'Description'='User password encryption type(s)'
+            'State'='Notice'
+            'Value'=$($CiscoConfig.userAccountsEncType | ForEach-Object {"$_ ($($ciscoEncryptTypes[[Int32]$_]))"} | Sort-Object -Unique | Out-String)
+            'Comment'="The highest available password encryption type supported by IOS must be used.  Ideally type 8 or 9 if available."
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+    }
+
+    if ($CiscoConfig.enableEncType) {
+        $props = @{
+            'Category'='General'
+            'Description'='Enable password encryption type(s)'
+            'State'='Notice'
+            'Value'=$("$($CiscoConfig.enableEncType) ($($ciscoEncryptTypes[[Int32]$CiscoConfig.enableEncType]))" | Out-String)
+            'Comment'="The highest available password encryption type supported by IOS must be used.  Ideally type 8 or 9 if available."
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     }
 
     # check if a login banner message is used
