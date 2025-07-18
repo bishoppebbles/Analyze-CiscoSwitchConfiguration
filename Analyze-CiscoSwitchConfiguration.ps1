@@ -38,11 +38,11 @@
 
     The Decrypt-Type7 function decodes Cisco's type 7 weak "encryption" and displays the plaintext password. It was ported by John Savu (with some code cleanup) from theevilbit's python script (https://github.com/theevilbit/ciscot7) which was released under the MIT license.
     
-    Version 1.0.22
+    Version 1.0.23
     Sam Pursglove
     James Swineford
     John Savu (Decrypt-Type7 function)
-    Last modified: 17 July 2025
+    Last modified: 18 July 2025
 #>
 
 [CmdletBinding(DefaultParameterSetName='FailOnly')]
@@ -147,6 +147,10 @@ Begin {
                     } elseif ($_ -match "switchport trunk native vlan (\d{1,4})$") {
                     
                         $Properties.Add('TrunkNativeVlan',$Matches[1])
+
+                    } elseif ($_ -match "switchport trunk allowed vlan (\w+)$") {
+                    
+                        $Properties.Add('TrunkAllowedVlan',$Matches[1])
 
                     } elseif ($_ -match "switchport port-security$") {
                     
@@ -463,123 +467,56 @@ Begin {
         $EncapsulationTypes = @{}
         $TrunkNativeVlans = @{}
 
-        $SourceData | Where-Object { $_.InterfaceType -ne 'Vlan' } | 
-        
-            ForEach-Object {
+        $SourceData | Where-Object { $_.InterfaceType -ne 'Vlan' } | ForEach-Object {
                
-                # count the number of physical interfaces on the switch
-                $CountPhysicalInterfaces++
+            # count the number of physical interfaces on the switch
+            $CountPhysicalInterfaces++
 
-                # check for misconfigurations where an interface has both access and trunk settings
-                if ($_.AccessVlan -gt 0 -and $_.Mode -eq 'trunk') {
+            # check for misconfigurations where an interface has both access and trunk settings
+            if (($_.AccessVlan -gt 0 -and $_.Mode -eq 'trunk') -or ($_.Mode -eq 'access' -and ($_.TrunkEncapsulation -or $_.TrunkNativeVlan -or $_.TrunkAllowedVlan))) {
              
-                    $Misconfig += "$($_.InterfaceType)$($_.InterfaceNumber)"
+                $Misconfig += "$($_.InterfaceType)$($_.InterfaceNumber)"
+            }
+                
+            # check if the port is shutdown
+            # Removed the IP addressable Ethernet Fa0 and Gi0/0 out-of-band management ports from analysis inclusion, it is separated from other switch port traffic
+            if ($_.Shutdown -and "$($_.InterfaceType)$($_.InterfaceNumber)" -notmatch "FastEthernet0$|GigabitEthernet0\/0$") {
+                        
+                $CountShutInterfaces++
+
+                #  all disabled ports shall be placed in a dedicated “UNUSED” VLAN that is also not VLAN1
+                if ($_.AccessVlan -eq $null -or $_.AccessVlan -eq 1) { 
+                        
+                    $ShutdownPortVlan1 += "$($_.InterfaceType)$($_.InterfaceNumber)"
                 }
                 
-                # check if the port is shutdown
-                # Removed the IP addressable Ethernet Fa0 and Gi0/0 out-of-band management ports from analysis inclusion, it is separated from other switch port traffic
-                if ($_.Shutdown -ne $null -and "$($_.InterfaceType)$($_.InterfaceNumber)" -notmatch "FastEthernet0$|GigabitEthernet0\/0$") {
-                        
-                    $CountShutInterfaces++
+            # check if the switchport mode as been configured or if it is set to dynamic auto|desirable
+            # the default for not setting on newer switches is auto while desirable was for older ones
+            # note: if a dynamic switchport does not trunk it resorts to access mode
+            } elseif ($_.Mode -eq $null -or $_.Mode -eq 'dynamic' -and "$($_.InterfaceType)$($_.InterfaceNumber)" -notmatch "FastEthernet0$|GigabitEthernet0\/0$") {
 
-                    #  all disabled ports shall be placed in a dedicated “UNUSED” VLAN that is also not VLAN1
-                    if ($_.AccessVlan -eq $null -or $_.AccessVlan -eq 1) { 
-                        
-                        $ShutdownPortVlan1 += "$($_.InterfaceType)$($_.InterfaceNumber)"
-                    }
-                
-                # check if the switchport mode as been configured or if it is set to dynamic auto|desirable
-                # the default for not setting on newer switches is auto while desirable was for older ones
-                # note: if a dynamic switchport does not trunk it resorts to access mode
-                } elseif ($_.Mode -eq $null -or $_.Mode -eq 'dynamic' -and "$($_.InterfaceType)$($_.InterfaceNumber)" -notmatch "FastEthernet0$|GigabitEthernet0\/0$") {
+                $CountDynamicAutoDesirable++
 
-                    $CountDynamicAutoDesirable++
-
-                    # if the dynamic switchport is not trunking it's in access because of this
-                    # check if the  port uses any vlan besides vlan 1
-                    if ($_.AccessVlan -ne $null -and $_.AccessVlan -ne 1) { 
+                # if the dynamic switchport is not trunking it's in access because of this
+                # check if the  port uses any vlan besides vlan 1
+                if ($_.AccessVlan -ne $null -and $_.AccessVlan -ne 1) { 
                     
-                        # does this vlan already exist in the hash table? if so, increase the count by 1
-                        if ($AccessVlans.ContainsKey($_.AccessVlan)) {
+                    # does this vlan already exist in the hash table? if so, increase the count by 1
+                    if ($AccessVlans.ContainsKey($_.AccessVlan)) {
                         
-                            $AccessVlans.Set_Item($_.AccessVlan, $AccessVlans.($_.AccessVlan) + 1) 
+                        $AccessVlans.Set_Item($_.AccessVlan, $AccessVlans.($_.AccessVlan) + 1) 
                     
-                        # if this a new vlan add it to the hash table and set the count to 
-                        } else {
-                        
-                            $AccessVlans.Add($_.AccessVlan, 1)
-                        }
-                    
-                    # count the number of ports and save the interface using vlan 1
+                    # if this a new vlan add it to the hash table and set the count to 
                     } else {
                         
-                        $CountDynamicVlan1++
-                        $DynamicInterfaceVlan1 += "$($_.InterfaceType)$($_.InterfaceNumber)"
-
-                        if ($_.TrunkEncapsulation) {
-                        
-                            # if a previously used trunk encapsulation types is used increase the count
-                            if ($EncapsulationTypes.ContainsKey($_.TrunkEncapsulation)) {
-                        
-                                $EncapsulationTypes.Set_Item($_.TrunkEncapsulation, $EncapsulationTypes.($_.TrunkEncapsulation) + 1) 
-                    
-                            # if a new trunk encapsulation type is used add it to the hash table
-                            } else {
-                        
-                                $EncapsulationTypes.Add($_.TrunkEncapsulation, 1)
-                            }
-                        }
-
-                        if ($_.TrunkNativeVlan) {
-
-                            # if a previously used trunk native vlan is used increase the count
-                            if ($TrunkNativeVlans.ContainsKey($_.TrunkNativeVlan)) {
-                        
-                                $TrunkNativeVlans.Set_Item($_.TrunkNativeVlan, $TrunkNativeVlans.($_.TrunkNativeVlan) + 1) 
-                    
-                            # if a new trunk vlan is used add it to the hash table
-                            } else {
-                        
-                                $TrunkNativeVlans.Add($_.TrunkNativeVlan, 1)
-                            }
-                        }
-
-                        if ($_.TrunkEncapsulation -ne $null -or $_.TrunkNativeVlan) {
-                            
-                            $CountTrunkInterfaces++
-                        }                    
+                        $AccessVlans.Add($_.AccessVlan, 1)
                     }
-
-                # check if this is an access port
-                } elseif ($_.Mode -eq 'access') {
                     
-                    $CountAccess++
-
-                    # check if the access port uses any vlan besides vlan 1
-                    if ($_.AccessVlan -ne $null -and $_.AccessVlan -ne 1) { 
-                    
-                        # does this vlan already exist in the hash table? if so, increase the count by 1
-                        if ($AccessVlans.ContainsKey($_.AccessVlan)) {
+                # count the number of ports and save the interface using vlan 1
+                } else {
                         
-                            $AccessVlans.Set_Item($_.AccessVlan, $AccessVlans.($_.AccessVlan) + 1) 
-                    
-                        # if this a new vlan add it to the hash table and set the count to 
-                        } else {
-                        
-                            $AccessVlans.Add($_.AccessVlan, 1)
-                        }
-                    
-                    # count the number of ports and save the interface using vlan 1
-                    } else {
-                        
-                        $CountAccessVlan1++
-                        $AccessInterfaceVlan1 += "$($_.InterfaceType)$($_.InterfaceNumber)"
-                    }
-                
-                # check if the interface is a trunk
-                } elseif ($_.Mode -eq 'trunk') {
-                    
-                    $CountTrunkInterfaces++
+                    $CountDynamicVlan1++
+                    $DynamicInterfaceVlan1 += "$($_.InterfaceType)$($_.InterfaceNumber)"
 
                     if ($_.TrunkEncapsulation) {
                         
@@ -608,8 +545,73 @@ Begin {
                             $TrunkNativeVlans.Add($_.TrunkNativeVlan, 1)
                         }
                     }
+
+                    if ($_.TrunkEncapsulation -ne $null -or $_.TrunkNativeVlan) {
+                            
+                        $CountTrunkInterfaces++
+                    }                    
+                }
+
+            # check if this is an access port
+            } elseif ($_.Mode -eq 'access') {
+                    
+                $CountAccess++
+
+                # check if the access port uses any vlan besides vlan 1
+                if ($_.AccessVlan -ne $null -and $_.AccessVlan -ne 1) { 
+                    
+                    # does this vlan already exist in the hash table? if so, increase the count by 1
+                    if ($AccessVlans.ContainsKey($_.AccessVlan)) {
+                        
+                        $AccessVlans.Set_Item($_.AccessVlan, $AccessVlans.($_.AccessVlan) + 1) 
+                    
+                    # if this a new vlan add it to the hash table and set the count to 
+                    } else {
+                        
+                        $AccessVlans.Add($_.AccessVlan, 1)
+                    }
+                    
+                # count the number of ports and save the interface using vlan 1
+                } else {
+                        
+                    $CountAccessVlan1++
+                    $AccessInterfaceVlan1 += "$($_.InterfaceType)$($_.InterfaceNumber)"
+                }
+                
+            # check if the interface is a trunk
+            } elseif ($_.Mode -eq 'trunk') {
+                    
+                $CountTrunkInterfaces++
+
+                if ($_.TrunkEncapsulation) {
+                        
+                    # if a previously used trunk encapsulation types is used increase the count
+                    if ($EncapsulationTypes.ContainsKey($_.TrunkEncapsulation)) {
+                        
+                        $EncapsulationTypes.Set_Item($_.TrunkEncapsulation, $EncapsulationTypes.($_.TrunkEncapsulation) + 1) 
+                    
+                    # if a new trunk encapsulation type is used add it to the hash table
+                    } else {
+                        
+                        $EncapsulationTypes.Add($_.TrunkEncapsulation, 1)
+                    }
+                }
+
+                if ($_.TrunkNativeVlan) {
+
+                    # if a previously used trunk native vlan is used increase the count
+                    if ($TrunkNativeVlans.ContainsKey($_.TrunkNativeVlan)) {
+                        
+                        $TrunkNativeVlans.Set_Item($_.TrunkNativeVlan, $TrunkNativeVlans.($_.TrunkNativeVlan) + 1) 
+                    
+                    # if a new trunk vlan is used add it to the hash table
+                    } else {
+                        
+                        $TrunkNativeVlans.Add($_.TrunkNativeVlan, 1)
+                    }
                 }
             }
+        }
 
         $ReturnData = @{
             misconfig=                 $Misconfig
@@ -1082,8 +1084,8 @@ Process {
         tftpServer=             Search-ConfigQuietly  "^tftp-server"                                    $Config.noInterfaces
         accessControlLists=     Search-ConfigForValue "^ip access-list \w+ (.+)"                        $Config.noInterfaces
         aaaNewModel=            Search-ConfigQuietly  "^aaa new-model$"                                 $Config.noInterfaces
-        aaaAuthLogin=           Search-ConfigForvalue "^aaa authentication login (.+)$"                 $Config.noInterfaces # need to integrate
-        aaaAuthEnable=          Search-ConfigForvalue "^aaa authentication enable (.+)$"                $Config.noInterfaces # need to integrate
+        aaaAuthLogin=           Search-ConfigForvalue "^aaa authentication login (.+)$"                 $Config.noInterfaces
+        aaaAuthEnable=          Search-ConfigForvalue "^aaa authentication enable (.+)$"                $Config.noInterfaces
         aaaGroupServer=         Search-ConfigForvalue "^aaa group server (.+)$"                         $Config.noInterfaces # need to integrate
         aaaAuthDot1x=           Search-ConfigForvalue "^aaa authentication dot1x (.+)"                  $Config.noInterfaces # need to integrate
         dot1xSysAuthControl=    Search-ConfigQuietly  "^dot1x system-auth-control"                      $Config.noInterfaces # need to integrate
