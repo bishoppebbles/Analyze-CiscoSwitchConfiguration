@@ -38,7 +38,7 @@
 
     The Decrypt-Type7 function decodes Cisco's type 7 weak "encryption" and displays the plaintext password. It was ported by John Savu (with some code cleanup) from theevilbit's python script (https://github.com/theevilbit/ciscot7) which was released under the MIT license.
     
-    Version 1.0.23
+    Version 1.0.24
     Sam Pursglove
     James Swineford
     John Savu (Decrypt-Type7 function)
@@ -466,6 +466,7 @@ Begin {
         $ShutdownPortVlan1 = @()
         $EncapsulationTypes = @{}
         $TrunkNativeVlans = @{}
+        $TrunkNativeVlan1 = @()
 
         $SourceData | Where-Object { $_.InterfaceType -ne 'Vlan' } | ForEach-Object {
                
@@ -544,6 +545,10 @@ Begin {
                         
                             $TrunkNativeVlans.Add($_.TrunkNativeVlan, 1)
                         }
+                    }else {
+                    
+                        # list of all trunk interfaces using native VLAN 1 (the default)
+                        $TrunkNativeVlan1 += "$($_.InterfaceType)$($_.InterfaceNumber)"
                     }
 
                     if ($_.TrunkEncapsulation -ne $null -or $_.TrunkNativeVlan) {
@@ -597,7 +602,7 @@ Begin {
                     }
                 }
 
-                if ($_.TrunkNativeVlan) {
+                if ($_.TrunkNativeVlan -and $_.TrunkNativeVlan -ne 1) {
 
                     # if a previously used trunk native vlan is used increase the count
                     if ($TrunkNativeVlans.ContainsKey($_.TrunkNativeVlan)) {
@@ -609,6 +614,10 @@ Begin {
                         
                         $TrunkNativeVlans.Add($_.TrunkNativeVlan, 1)
                     }
+                } else {
+                    
+                    # list of all trunk interfaces using native VLAN 1 (the default)
+                    $TrunkNativeVlan1 += "$($_.InterfaceType)$($_.InterfaceNumber)"
                 }
             }
         }
@@ -621,6 +630,7 @@ Begin {
             dynamicInterfaceVlan1=     $DynamicInterfaceVlan1
             encapsulationTypes=        $EncapsulationTypes
             trunkNativeVlans=          $TrunkNativeVlans
+            trunkNativeVlan1=          $TrunkNativeVlan1
             countPhysicalInterfaces=   $CountPhysicalInterfaces
             countShutInterfaces=       $CountShutInterfaces
             countAccess=               $CountAccess
@@ -1602,7 +1612,7 @@ Process {
             'Description'='Access ports using VLAN 1'
             'State'='Fail'
             'Value'=$($AccessTrunk.accessInterfaceVlan1 | Out-String)
-            'Comment'="All access ports must use a VLAN other than VLAN 1"
+            'Comment'="All access ports must use a VLAN other than VLAN 1."
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     } else {
@@ -1611,7 +1621,7 @@ Process {
             'Description'='Access ports using VLAN 1'
             'State'='Pass'
             'Value'=''
-            'Comment'='No access mode switchports operating in VLAN 1'
+            'Comment'='No access mode switchports operating in VLAN 1.'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     }
@@ -1623,7 +1633,7 @@ Process {
             'Description'='Dynamic ports using VLAN 1'
             'State'='Fail'
             'Value'=$($AccessTrunk.dynamicInterfaceVlan1 | Out-String)
-            'Comment'="Any access mode dynamic switchports must use a VLAN other than VLAN 1; if these switchports are trunking this is not applicable"
+            'Comment'="Any access mode dynamic switchports must use a VLAN other than VLAN 1; if these switchports are trunking this is not applicable."
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     } else {
@@ -1632,7 +1642,7 @@ Process {
             'Description'='Dynamic ports using VLAN 1'
             'State'='Pass'
             'Value'=''
-            'Comment'='No access mode dynamic switchports operating in VLAN 1'
+            'Comment'='No access mode dynamic switchports operating in VLAN 1.'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     }
@@ -1644,7 +1654,7 @@ Process {
             'Description'='Shutdown ports in VLAN 1'
             'State'='Fail'
             'Value'=$($AccessTrunk.shutdownPortVlan1 | Out-String)
-            'Comment'="Any shutdown port must be assigned to an unused VLAN that is also not VLAN 1"
+            'Comment'="Any shutdown port must be assigned to an unused VLAN that is also not VLAN 1."
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     } else {
@@ -1653,7 +1663,7 @@ Process {
             'Description'='Shutdown ports in VLAN 1'
             'State'='Pass'
             'Value'=''
-            'Comment'='No shutdown ports are assigned to VLAN 1'
+            'Comment'='No shutdown ports are assigned to VLAN 1.'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     }
@@ -1665,7 +1675,7 @@ Process {
             'Description'='Port security multiple MAC addresses'
             'State'='Fail'
             'Value'=$($PortSecurityMaxCount | Out-String)
-            'Comment'='Without justification the maximum number of allowable MAC address per port must be one'
+            'Comment'='Without justification the maximum number of allowable MAC address per port must be one.'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     } else {
@@ -1674,7 +1684,7 @@ Process {
             'Description'='Port security multiple MAC addresses'
             'State'='Pass'
             'Value'=''
-            'Comment'='Port security allows one MAC address per port'
+            'Comment'='Port security allows one MAC address per port.'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     }
@@ -1686,7 +1696,7 @@ Process {
             'Description'='Sticky port port-security'
             'State'='Fail'
             'Value'=$($NonSticky | Out-String)
-            'Comment'='All active access ports must have port security enabled'
+            'Comment'='All active access ports must have port security enabled.'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     } else {
@@ -1695,10 +1705,32 @@ Process {
             'Description'='Sticky port port-security'
             'State'='Pass'
             'Value'=''
-            'Comment'='All active access ports have port security enabled'
+            'Comment'='All active access ports have port security enabled.'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     }
+
+    # displays trunking interfaces that are using the default native VLAN 1
+    if ($AccessTrunk.trunkNativeVlan1 -gt 0) {
+        $props = @{
+            'Category'='Interfaces'
+            'Description'='Trunking native VLAN'
+            'State'='Fail'
+            'Value'=$($AccessTrunk.trunkNativeVlan1 | Out-String)
+            'Comment'='When trunking is used the native VLAN must be changed from the default VLAN 1 to a dedicated VLAN.'
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
+    } else {
+        $props = @{
+            'Category'='Interfaces'
+            'Description'='Trunking native VLAN'
+            'State'='Pass'
+            'Value'=''
+            'Comment'='The default native VLAN 1 for trunking intefaces is not in use.'
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
+    }
+
 
     # diplays interfaces if they are misconfigured using both access and trunk commands
     if ($AccessTrunk.misconfig.Count -gt 0) {
