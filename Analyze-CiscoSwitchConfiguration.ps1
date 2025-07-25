@@ -38,11 +38,11 @@
 
     The Decrypt-Type7 function decodes Cisco's type 7 weak "encryption" and displays the plaintext password. It was ported by John Savu (with some code cleanup) from theevilbit's python script (https://github.com/theevilbit/ciscot7) which was released under the MIT license.
     
-    Version 1.0.24
+    Version 1.0.25
     Sam Pursglove
     James Swineford
     John Savu (Decrypt-Type7 function)
-    Last modified: 18 July 2025
+    Last modified: 25 July 2025
 #>
 
 [CmdletBinding(DefaultParameterSetName='FailOnly')]
@@ -138,7 +138,10 @@ Begin {
 
                     } elseif ($_ -match "switchport access vlan (\d{1,4})$") {
                     
-                        $Properties.Add('AccessVlan',$Matches[1])
+                        # seeing some configs with a duplicate 'switchport access vlan' line
+                        if (-not $Properties.ContainsKey('AccessVlan')) {
+                            $Properties.Add('AccessVlan',$Matches[1])
+                        }
 
                     } elseif ($_ -match "switchport trunk encapsulation (dot1q|isl|negotiate)$") {
                     
@@ -1188,7 +1191,7 @@ Process {
     if ($CiscoConfig.userAccountsSecret.Count -gt 1) {
         $props = @{
             'Category'='General'
-            'Description'='Password encryption for local accounts'
+            'Description'='Local accounts and encryption'
             'State'='Pass'
             'Value'=$($CiscoConfig.userAccountsSecret | Out-String)
             'Comment'='Secret password encryption is used; each network administrator must have a unique login'
@@ -1198,7 +1201,7 @@ Process {
     } elseif ($CiscoConfig.userAccountsSecret.Count -gt 0) {
         $props = @{
             'Category'='General'
-            'Description'='Password encryption for local accounts'
+            'Description'='Local accounts and encryption'
             'State'='Warning'
             'Value'=$($CiscoConfig.userAccountsSecret | Out-String)
             'Comment'='Secret password encryption is used; only one local user account is active, each network administrator must have a unique login'
@@ -1209,7 +1212,7 @@ Process {
     if ($CiscoConfig.userAccountsPassword.Count -gt 0) {
         $props = @{
             'Category'='General'
-            'Description'='Password encryption for local accounts'
+            'Description'='Local accounts and encryption'
             'State'='Fail'
             'Value'=$($CiscoConfig.userAccountsPassword | Out-String)
             'Comment'="All local user accunts should be stored with the strongest form of encryption using the the command 'username <user> secret <password>'"
