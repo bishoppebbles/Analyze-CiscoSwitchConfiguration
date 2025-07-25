@@ -38,7 +38,7 @@
 
     The Decrypt-Type7 function decodes Cisco's type 7 weak "encryption" and displays the plaintext password. It was ported by John Savu (with some code cleanup) from theevilbit's python script (https://github.com/theevilbit/ciscot7) which was released under the MIT license.
     
-    Version 1.0.25
+    Version 1.0.26
     Sam Pursglove
     James Swineford
     John Savu (Decrypt-Type7 function)
@@ -1888,16 +1888,16 @@ Process {
                 'Description'='Login method'
                 'State'='Pass'
                 'Value'=$($ConsoleData.LoginAuth | Out-String)
-                'Comment'='AAA is enabled and the console is configured for AAA authentication login'
+                'Comment'='AAA is enabled and the console is configured for AAA authentication login.  Console access may be restricted depending on the AAA login authentication configuration.'
             }
             $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
         } else {
             $props = @{
                 'Category'='Console'
                 'Description'='Login method'
-                'State'='Fail'
+                'State'='Notice'
                 'Value'=''
-                'Comment'='AAA is enabled but the console is not configured for AAA authentication login'
+                'Comment'='AAA is enabled but the console is not configured for AAA authentication login.  Console access may be restricted depending on the AAA login authentication configuration.'
             }
             $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
         }
