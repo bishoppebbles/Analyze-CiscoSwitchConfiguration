@@ -38,11 +38,11 @@
 
     The Decrypt-Type7 function decodes Cisco's type 7 weak "encryption" and displays the plaintext password. It was ported by John Savu (with some code cleanup) from theevilbit's python script (https://github.com/theevilbit/ciscot7) which was released under the MIT license.
     
-    Version 1.0.26
+    Version 1.0.27
     Sam Pursglove
     James Swineford
     John Savu (Decrypt-Type7 function)
-    Last modified: 25 July 2025
+    Last modified: 29 September 2025
 #>
 
 [CmdletBinding(DefaultParameterSetName='FailOnly')]
@@ -901,7 +901,7 @@ Begin {
             $lastRow = $lastRow + 2
         }
         
-        $output | clip
+        $output | Set-Clipboard
         $script:objSheetInfo.Activate()
         $script:objSheetInfo.Cells.Item($lastRow,1).Select() | Out-Null #paste to last used row
         $script:objSheetInfo.Paste()
@@ -921,7 +921,7 @@ Begin {
             $output += "$($item.Category)`t$($item.Description)`t$($item.State)`t`"$($item.Value)`"`t$($item.Comment)`n"
         }
         
-        $output | clip
+        $output | Set-Clipboard
         $objSheetResults.Activate()
         $objSheetResults.Cells.Item(1,1).Select() | Out-Null
         $objSheetResults.Paste()
@@ -2853,6 +2853,7 @@ End {
 
     if ($output -eq 'Excel') {
         $objExcel.visible = $true
+        $objExcel.Close
     }
 }
 
