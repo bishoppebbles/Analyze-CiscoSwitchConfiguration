@@ -38,7 +38,7 @@
 
     The Decrypt-Type7 function decodes Cisco's type 7 weak "encryption" and displays the plaintext password. It was ported by John Savu (with some code cleanup) from theevilbit's python script (https://github.com/theevilbit/ciscot7) which was released under the MIT license.
     
-    Version 1.0.28
+    Version 1.0.29
     Sam Pursglove
     James Swineford
     John Savu (Decrypt-Type7 function)
@@ -1963,14 +1963,14 @@ Process {
         }
     }
 
-    # check the transport output setting
+    # check the console transport output setting
     if ($ConsoleData.TransportOut -like "ssh") {
         $props = @{
             'Category'='Console'
             'Description'='Transport output'
             'State'='Pass'
             'Value'='SSH'
-            'Comment'='Transport output is configured to only use SSH'
+            'Comment'='Transport output is configured to only use SSH.  To prevent living off the land capabilities consider changing it to none.'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     } elseif (!$ConsoleData.TransportOut) {
@@ -1979,7 +1979,7 @@ Process {
             'Description'='Transport output'
             'State'='Warning'
             'Value'='Default'
-            'Comment'='Transport output is not configured; it should be configured for SSH use only'
+            'Comment'='Transport output is not configured; it should be configured for none or SSH use only.'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     } else {
@@ -1988,7 +1988,7 @@ Process {
             'Description'='Transport output'
             'State'='Warning'
             'Value'=$ConsoleData.TransportOut
-            'Comment'='The transport output should be configured for SSH use only'
+            'Comment'='The transport output should be configured for none or SSH use only.'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     }
@@ -2227,14 +2227,14 @@ Process {
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     }
 
-    # check the transport output setting
+    # check the VTY 0 4 transport output setting
     if ($Vty0_4Data.TransportOut -like "ssh") {
         $props = @{
             'Category'='VTY 0-4'
             'Description'='Transport output'
             'State'='Pass'
             'Value'='SSH'
-            'Comment'=''
+            'Comment'='Transport output is configured to only use SSH.  To prevent living off the land capabilities consider changing it to none.'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     } elseif (!$Vty0_4Data.TransportOut) {
@@ -2243,7 +2243,7 @@ Process {
             'Description'='Transport output'
             'State'='Warning'
             'Value'='Not configured'
-            'Comment'=''
+            'Comment'='Transport output is not configured; it should be configured for none or SSH use only.'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     } else {
@@ -2252,7 +2252,7 @@ Process {
             'Description'='Transport output'
             'State'='Warning'
             'Value'=$Vty0_4Data.TransportOut
-            'Comment'=''
+            'Comment'='The transport output should be configured for none or SSH use only.'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     }
@@ -2489,14 +2489,14 @@ Process {
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     }
 
-    # check the transport output setting
+    # check the VTY 5 15 transport output setting
     if ($Vty5_15Data.TransportOut -like "ssh") {
         $props = @{
             'Category'='VTY 5-15'
             'Description'='Transport output'
             'State'='Pass'
             'Value'='SSH'
-            'Comment'=''
+            'Comment'='Transport output is configured to only use SSH.  To prevent living off the land capabilities consider changing it to none.'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     } elseif (!$Vty5_15Data.TransportOut) {
@@ -2505,7 +2505,7 @@ Process {
             'Description'='Transport output'
             'State'='Warning'
             'Value'='Not configured'
-            'Comment'=''
+            'Comment'='Transport output is not configured; it should be configured for none or SSH use only.'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     } else {
@@ -2514,7 +2514,7 @@ Process {
             'Description'='Transport output'
             'State'='Warning'
             'Value'=$Vty5_15Data.TransportOut
-            'Comment'=''
+            'Comment'='The transport output should be configured for none or SSH use only.'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     }
@@ -2753,14 +2753,14 @@ Process {
             $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
         }
 
-        # check the transport output setting
+        # check the VTY 16 31 transport output setting
         if ($Vty16_31Data.TransportOut -like "ssh") {
             $props = @{
                 'Category'='VTY 16-31'
                 'Description'='Transport output'
                 'State'='Pass'
                 'Value'='SSH'
-                'Comment'=''
+                'Comment'='Transport output is configured to only use SSH.  To prevent living off the land capabilities consider changing it to none.'
             }
             $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
         } elseif (!$Vty16_31Data.TransportOut) {
@@ -2769,7 +2769,7 @@ Process {
                 'Description'='Transport output'
                 'State'='Warning'
                 'Value'='Not configured'
-                'Comment'=''
+                'Comment'='Transport output is not configured; it should be configured for none or SSH use only.'
             }
             $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
         } else {
@@ -2778,7 +2778,7 @@ Process {
                 'Description'='Transport output'
                 'State'='Warning'
                 'Value'=$Vty16_31Data.TransportOut
-                'Comment'=''
+                'Comment'='The transport output should be configured for none or SSH use only.'
             }
             $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
         }
