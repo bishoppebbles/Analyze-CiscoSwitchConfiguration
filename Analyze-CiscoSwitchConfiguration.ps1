@@ -38,7 +38,7 @@
 
     The Decrypt-Type7 function decodes Cisco's type 7 weak "encryption" and displays the plaintext password. It was ported by John Savu (with some code cleanup) from theevilbit's python script (https://github.com/theevilbit/ciscot7) which was released under the MIT license.
     
-    Version 1.0.29
+    Version 1.0.30
     Sam Pursglove
     James Swineford
     John Savu (Decrypt-Type7 function)
@@ -1103,17 +1103,19 @@ Process {
         snmpV3Group=            Search-ConfigForValue "^snmp-server group (.+) v3 priv"                 $Config.noInterfaces
         httpMgmtInterface=      Search-ConfigQuietly  "^ip http server$"                                $Config.noInterfaces
         ntpServer=              Search-ConfigForValue "^ntp server (\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3})"   $Config.noInterfaces
+        ntpServerKey=           Search-ConfigForValue "^ntp server \S+ key (\S+)"                       $Config.noInterfaces
+        ntpAuthenticationKey=   Search-ConfigForValue "^ntp authentication-key (\S+)"                   $Config.noInterfaces
+        ntpTrustedKey=          Search-ConfigForValue "^ntp trusted-key (\S+)"                          $Config.noInterfaces
+        ntpAuthenticate=        Search-ConfigQuietly  "^ntp authenticate$"                              $Config.noInterfaces
+        ntpLogging=             Search-ConfigQuietly  "^ntp logging$"                                   $Config.noInterfaces
         syslogServer=           Search-ConfigForValue "logging h?o?s?t? ?(\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3})" $Config.noInterfaces
         tftpServer=             Search-ConfigQuietly  "^tftp-server"                                    $Config.noInterfaces
         accessControlLists=     Search-ConfigForValue "^ip access-list \w+ (.+)"                        $Config.noInterfaces
         aaaNewModel=            Search-ConfigQuietly  "^aaa new-model$"                                 $Config.noInterfaces
         aaaAuthLogin=           Search-ConfigForvalue "^aaa authentication login (.+)$"                 $Config.noInterfaces
         aaaAuthEnable=          Search-ConfigForvalue "^aaa authentication enable (.+)$"                $Config.noInterfaces
-        aaaAuthDot1X=           Search-ConfigForvalue "^aaa authentication dot1x (.+)"                  $Config.noInterfaces # need to integrate
-        dot1xSysAuthControl=    Search-ConfigQuietly  "^dot1x system-auth-control"                      $Config.noInterfaces # need to integrate
-        aaaGroupServer=         Search-ConfigForvalue "^aaa group server (.+)$"                         $Config.noInterfaces # need to integrate
-        tacacsServer=           Search-ConfigForValue "^tacacs server (.+)"                             $Config.noInterfaces # need to integrate as a separate section
-        tacacsServerIp=         Search-ConfigForValue "address ipv4 (\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3})"  $Config.noInterfaces # need to integrate as a separate section
+        aaaAuthDot1X=           Search-ConfigForvalue "^aaa authentication dot1x (.+)"                  $Config.noInterfaces
+        dot1xSysAuthControl=    Search-ConfigQuietly  "^dot1x system-auth-control"                      $Config.noInterfaces
     }
 
     #region test conditions
@@ -1637,6 +1639,67 @@ Process {
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     }
     #endregion SNMP tests
+
+    #region NTP tests
+
+    # check if at least one NTP server is configured for authentication
+    if ($CiscoConfig.ntpAuthenticate) {
+        $authKey   = [int]$CiscoConfig.ntpAuthenticationKey
+        $trustKey  = [int]$CiscoConfig.ntpTrustedKey
+        $serverKey = [int]$CiscoConfig.ntpServerKey
+
+        if ($authKey -eq $trustKey -and $authKey -eq $serverKey) {
+            $props = @{
+                'Category'='NTP'
+                'Description'='NTP authentication'
+                'State'='Pass'
+                'Value'='Enabled'
+                'Comment'='NTP authentication is configured with at least one server.'
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
+        } else {
+            $props = @{
+                'Category'='NTP'
+                'Description'='NTP authentication'
+                'State'='Failed'
+                'Value'='NTP authentication is not properly configured'
+                'Comment'='NTP is not properly configured with at least one authentication key.'
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
+        }
+    } else {
+        $props = @{
+            'Category'='NTP'
+            'Description'='NTP authentication'
+            'State'='Fail'
+            'Value'='Disabled'
+            'Comment'='NTP authentication is not enabled.'
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
+    }
+
+    # check if NTP logging is enabled
+    if ($CiscoConfig.ntpLogging) {
+        $props = @{
+            'Category'='NTP'
+            'Description'='NTP logging'
+            'State'='Pass'
+            'Value'='Enabled'
+            'Comment'='NTP logging is enabled.'
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
+    } else {
+        $props = @{
+            'Category'='NTP'
+            'Description'='NTP logging'
+            'State'='Fail'
+            'Value'='Disabled'
+            'Comment'='NTP logging is not enabled.'
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
+    }
+
+    #endregion NTP tests
 
     #region interfaces
     # displays how many interfaces use default access VLAN 1 set in access mode
