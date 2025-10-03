@@ -38,11 +38,11 @@
 
     The Decrypt-Type7 function decodes Cisco's type 7 weak "encryption" and displays the plaintext password. It was ported by John Savu (with some code cleanup) from theevilbit's python script (https://github.com/theevilbit/ciscot7) which was released under the MIT license.
     
-    Version 1.0.27
+    Version 1.0.28
     Sam Pursglove
     James Swineford
     John Savu (Decrypt-Type7 function)
-    Last modified: 29 September 2025
+    Last modified: 03 October 2025
 #>
 
 [CmdletBinding(DefaultParameterSetName='FailOnly')]
@@ -1193,7 +1193,7 @@ Process {
             'Category'='General'
             'Description'='Local accounts and encryption'
             'State'='Pass'
-            'Value'=$($CiscoConfig.userAccountsSecret | Out-String)
+            'Value'=($($CiscoConfig.userAccountsSecret | Out-String)).Trim()
             'Comment'='Secret password encryption is used; each network administrator must have a unique login'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
@@ -1203,7 +1203,7 @@ Process {
             'Category'='General'
             'Description'='Local accounts and encryption'
             'State'='Warning'
-            'Value'=$($CiscoConfig.userAccountsSecret | Out-String)
+            'Value'=($($CiscoConfig.userAccountsSecret | Out-String)).Trim()
             'Comment'='Secret password encryption is used; only one local user account is active, each network administrator must have a unique login'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
@@ -1214,7 +1214,7 @@ Process {
             'Category'='General'
             'Description'='Local accounts and encryption'
             'State'='Fail'
-            'Value'=$($CiscoConfig.userAccountsPassword | Out-String)
+            'Value'=($($CiscoConfig.userAccountsPassword | Out-String)).Trim()
             'Comment'="All local user accunts should be stored with the strongest form of encryption using the the command 'username <user> secret <password>'"
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
@@ -1226,7 +1226,7 @@ Process {
             'Category'='General'
             'Description'='User password encryption type(s)'
             'State'='Notice'
-            'Value'=$($CiscoConfig.userAccountsEncType | ForEach-Object {"$_ ($($ciscoEncryptTypes[[Int32]$_]))"} | Sort-Object -Unique | Out-String)
+            'Value'=($($CiscoConfig.userAccountsEncType | ForEach-Object {"$_ ($($ciscoEncryptTypes[[Int32]$_]))"} | Sort-Object -Unique | Out-String)).Trim()
             'Comment'="The highest available password encryption type supported by IOS must be used.  Ideally type 8 or 9 if available."
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
@@ -1237,7 +1237,7 @@ Process {
             'Category'='General'
             'Description'='Enable password encryption type(s)'
             'State'='Notice'
-            'Value'=$("$($CiscoConfig.enableEncType) ($($ciscoEncryptTypes[[Int32]$CiscoConfig.enableEncType]))" | Out-String)
+            'Value'=($("$($CiscoConfig.enableEncType) ($($ciscoEncryptTypes[[Int32]$CiscoConfig.enableEncType]))" | Out-String)).Trim()
             'Comment'="The highest available password encryption type supported by IOS must be used.  Ideally type 8 or 9 if available."
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
@@ -1313,7 +1313,7 @@ Process {
             'Category'='Server'
             'Description'='Redundant NTP servers'
             'State'='Pass'
-            'Value'=$($CiscoConfig.ntpServer | Out-String)
+            'Value'=($($CiscoConfig.ntpServer | Out-String)).Trim()
             'Comment'=''
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
@@ -1322,7 +1322,7 @@ Process {
             'Category'='Server'
             'Description'='Redundant NTP servers'
             'State'='Fail'
-            'Value'=$($CiscoConfig.ntpServer | Out-String)
+            'Value'=($($CiscoConfig.ntpServer | Out-String)).Trim()
             'Comment'='Redundant NTP servers must be configured'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
@@ -1334,7 +1334,7 @@ Process {
             'Category'='Server'
             'Description'='Syslog server(s)'
             'State'='Pass'
-            'Value'=$($CiscoConfig.syslogServer| Out-String)
+            'Value'=($($CiscoConfig.syslogServer| Out-String)).Trim()
             'Comment'=''
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
@@ -1387,7 +1387,7 @@ Process {
                 'Category'='AAA'
                 'Description'='Global login authentication'
                 'State'='Notice'
-                'Value'=$($CiscoConfig.aaaAuthLogin | Out-String)
+                'Value'=($($CiscoConfig.aaaAuthLogin | Out-String)).Trim()
                 'Comment'="Global login authenticataion is configured with this sequence of authentication methods"
             }
             $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
@@ -1408,7 +1408,7 @@ Process {
                 'Category'='AAA'
                 'Description'='Global enable authentication'
                 'State'='Notice'
-                'Value'=$($CiscoConfig.aaaAuthEnable | Out-String)
+                'Value'=($($CiscoConfig.aaaAuthEnable | Out-String)).Trim()
                 'Comment'="Global enable authentication is configured with this sequence of authentication methods"
             }
             $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
@@ -1591,7 +1591,7 @@ Process {
             'Category'='SNMP'
             'Description'='v3 Group(s) configured for authPriv'
             'State'='Pass'
-            'Value'=$($CiscoConfig.snmpV3Group | Sort-Object -Unique | Out-String)
+            'Value'=($($CiscoConfig.snmpV3Group | Sort-Object -Unique | Out-String)).Trim()
             'Comment'=''
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
@@ -1614,7 +1614,7 @@ Process {
             'Category'='Interfaces'
             'Description'='Access ports using VLAN 1'
             'State'='Fail'
-            'Value'=$($AccessTrunk.accessInterfaceVlan1 | Out-String)
+            'Value'=($($AccessTrunk.accessInterfaceVlan1 | Out-String)).Trim()
             'Comment'="All access ports must use a VLAN other than VLAN 1."
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
@@ -1635,7 +1635,7 @@ Process {
             'Category'='Interfaces'
             'Description'='Dynamic ports using VLAN 1'
             'State'='Fail'
-            'Value'=$($AccessTrunk.dynamicInterfaceVlan1 | Out-String)
+            'Value'=($($AccessTrunk.dynamicInterfaceVlan1 | Out-String)).Trim()
             'Comment'="Any access mode dynamic switchports must use a VLAN other than VLAN 1; if these switchports are trunking this is not applicable."
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
@@ -1656,7 +1656,7 @@ Process {
             'Category'='Interfaces'
             'Description'='Shutdown ports in VLAN 1'
             'State'='Fail'
-            'Value'=$($AccessTrunk.shutdownPortVlan1 | Out-String)
+            'Value'=($($AccessTrunk.shutdownPortVlan1 | Out-String)).Trim()
             'Comment'="Any shutdown port must be assigned to an unused VLAN that is also not VLAN 1."
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
@@ -1677,7 +1677,7 @@ Process {
             'Category'='Interfaces'
             'Description'='Port security multiple MAC addresses'
             'State'='Fail'
-            'Value'=$($PortSecurityMaxCount | Out-String)
+            'Value'=($($PortSecurityMaxCount | Out-String)).Trim()
             'Comment'='Without justification the maximum number of allowable MAC address per port must be one.'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
@@ -1698,7 +1698,7 @@ Process {
             'Category'='Interfaces'
             'Description'='Sticky port port-security'
             'State'='Fail'
-            'Value'=$($NonSticky | Out-String)
+            'Value'=($($NonSticky | Out-String)).Trim()
             'Comment'='All active access ports must have port security enabled.'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
@@ -1719,7 +1719,7 @@ Process {
             'Category'='Interfaces'
             'Description'='Trunking native VLAN'
             'State'='Fail'
-            'Value'=$($AccessTrunk.trunkNativeVlan1 | Out-String)
+            'Value'=($($AccessTrunk.trunkNativeVlan1 | Out-String)).Trim()
             'Comment'='When trunking is used the native VLAN must be changed from the default VLAN 1 to a dedicated VLAN.'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
@@ -1741,7 +1741,7 @@ Process {
             'Category'='Interfaces'
             'Description'='Access and trunk settings'
             'State'='Warning'
-            'Value'=$($AccessTrunk.misconfig | Out-String)
+            'Value'=($($AccessTrunk.misconfig | Out-String)).Trim()
             'Comment'="An interface should be configured for access or trunk mode, but not both."
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
@@ -1776,7 +1776,7 @@ Process {
             'Category'='Interfaces'
             'Description'='With BPDUGuard and BPDUFilter'
             'State'='Warning'
-            'Value'=$($SpanningTreeInterfaceConfig.bpduGuardFilterEnabled | Out-String)
+            'Value'=($($SpanningTreeInterfaceConfig.bpduGuardFilterEnabled | Out-String)).Trim()
             'Comment'="BPDUGuard and BDPUFilter are mutually exclusive spanning-tree features. If they are configured on the same interface BPDUGuard is effectively disabled and BPDUFilter will stay operational. It is a recommended practice to configure each access port with PortFast and BPDUGuard, disable BPDUFilter."
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
@@ -1887,7 +1887,7 @@ Process {
                 'Category'='Console'
                 'Description'='Login method'
                 'State'='Pass'
-                'Value'=$($ConsoleData.LoginAuth | Out-String)
+                'Value'=($($ConsoleData.LoginAuth | Out-String)).Trim()
                 'Comment'='AAA is enabled and the console is configured for AAA authentication login.  Console access may be restricted depending on the AAA login authentication configuration.'
             }
             $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
