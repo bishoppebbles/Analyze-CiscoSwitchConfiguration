@@ -166,7 +166,16 @@ Begin {
                     } elseif ($_ -match "switchport port-security maximum (\d{1,4})$") {
                     
                         $Properties.Add('PortSecurityMax',$Matches[1])
-
+                    
+                    } elseif ($_ -match "authentication port-control auto$") {
+                    
+                        $Properties.Add('Dot1XPort',$true)
+                    
+                    # MAC authentication bypass (MAB) not currently in use but added for potential future integration
+                    } elseif ($_ -match "mab$") {
+                    
+                        $Properties.Add('MAB',$true)
+                    
                     } elseif ($_ -match "duplex (auto|full|half)$") {
                     
                         $Properties.Add('Duplex',$Matches[1])
@@ -682,7 +691,8 @@ Begin {
 
         $SourceData | ForEach-Object {
         
-            if ($_.PortSecurity        -ne $true   -and 
+            if ($_.Dot1XPort           -ne $true   -and
+                $_.PortSecurity        -ne $true   -and 
                 $_.StickyPort          -ne $true   -and 
                 $_.Shutdown            -ne $true   -and
                 $_.Mode                -ne 'trunk' -and 
@@ -1099,9 +1109,9 @@ Process {
         aaaNewModel=            Search-ConfigQuietly  "^aaa new-model$"                                 $Config.noInterfaces
         aaaAuthLogin=           Search-ConfigForvalue "^aaa authentication login (.+)$"                 $Config.noInterfaces
         aaaAuthEnable=          Search-ConfigForvalue "^aaa authentication enable (.+)$"                $Config.noInterfaces
-        aaaGroupServer=         Search-ConfigForvalue "^aaa group server (.+)$"                         $Config.noInterfaces # need to integrate
-        aaaAuthDot1x=           Search-ConfigForvalue "^aaa authentication dot1x (.+)"                  $Config.noInterfaces # need to integrate
+        aaaAuthDot1X=           Search-ConfigForvalue "^aaa authentication dot1x (.+)"                  $Config.noInterfaces # need to integrate
         dot1xSysAuthControl=    Search-ConfigQuietly  "^dot1x system-auth-control"                      $Config.noInterfaces # need to integrate
+        aaaGroupServer=         Search-ConfigForvalue "^aaa group server (.+)$"                         $Config.noInterfaces # need to integrate
         tacacsServer=           Search-ConfigForValue "^tacacs server (.+)"                             $Config.noInterfaces # need to integrate as a separate section
         tacacsServerIp=         Search-ConfigForValue "address ipv4 (\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3})"  $Config.noInterfaces # need to integrate as a separate section
     }
@@ -1323,7 +1333,7 @@ Process {
             'Description'='Redundant NTP servers'
             'State'='Fail'
             'Value'=($($CiscoConfig.ntpServer | Out-String)).Trim()
-            'Comment'='Redundant NTP servers must be configured'
+            'Comment'='Redundant NTP servers must be configured.'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     }
@@ -1344,7 +1354,7 @@ Process {
             'Description'='Syslog server(s)'
             'State'='Fail'
             'Value'=''
-            'Comment'="Configure at least one syslog server using the 'logging <server_ip_address>' command"
+            'Comment'="Configure at least one syslog server using the 'logging <server_ip_address>' command."
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
     }
@@ -1377,7 +1387,7 @@ Process {
             'Description'='Authentication, Authorization, Accounting'
             'State'='Pass'
             'Value'='Enabled'
-            'Comment'="Console and VTY line analysis maybe inaccurate as it does not consider 'aaa new-model' authentication methods"
+            'Comment'="Console and VTY line analysis maybe inaccurate as it does not consider 'aaa new-model' authentication methods."
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
 
@@ -1388,7 +1398,7 @@ Process {
                 'Description'='Global login authentication'
                 'State'='Notice'
                 'Value'=($($CiscoConfig.aaaAuthLogin | Out-String)).Trim()
-                'Comment'="Global login authenticataion is configured with this sequence of authentication methods"
+                'Comment'="Global login authenticataion is configured with this sequence of authentication methods."
             }
             $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
         } else {
@@ -1397,7 +1407,7 @@ Process {
                 'Description'='Global login authentication'
                 'State'='Fail'
                 'Value'='Not configured'
-                'Comment'="AAA is enabled but global login authenticataion is not configured"
+                'Comment'="AAA is enabled but global login authenticataion is not configured."
             }
             $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
         }
@@ -1409,7 +1419,7 @@ Process {
                 'Description'='Global enable authentication'
                 'State'='Notice'
                 'Value'=($($CiscoConfig.aaaAuthEnable | Out-String)).Trim()
-                'Comment'="Global enable authentication is configured with this sequence of authentication methods"
+                'Comment'="Global enable authentication is configured with this sequence of authentication methods."
             }
             $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
         } else {
@@ -1418,7 +1428,28 @@ Process {
                 'Description'='Global enable authentication'
                 'State'='Fail'
                 'Value'='Not configured'
-                'Comment'="AAA is enabled but global enable authentication is not configured"
+                'Comment'="AAA is enabled but global enable authentication is not configured."
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        }
+
+        # aaa authentication 802.1X check with AAA
+        if ($CiscoConfig.aaaAuthDot1X) {
+            $props = @{
+                'Category'='AAA'
+                'Description'='802.1X authentication server'
+                'State'='Notice'
+                'Value'=($($CiscoConfig.aaaAuthDot1X | Out-String)).Trim()
+                'Comment'="An 802.1X authentication server is configured."
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        } else {
+            $props = @{
+                'Category'='AAA'
+                'Description'='802.1X authentication server'
+                'State'='Notice'
+                'Value'='Not configured'
+                'Comment'="An 802.1X authentication server is not configured.  Access port stickyport port security should be enabled."
             }
             $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
         }
@@ -1429,7 +1460,7 @@ Process {
             'Description'='Authentication, Authorization, Accounting'
             'State'='Notice'
             'Value'='Disabled'
-            'Comment'='Authentication, Authorization, and, Accounting (AAA) is disabled'
+            'Comment'='Authentication, Authorization, and, Accounting (AAA) is disabled.'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     }
@@ -1702,6 +1733,15 @@ Process {
             'Comment'='All active access ports must have port security enabled.'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
+    } elseif ($CiscoConfig.dot1xSysAuthControl) {
+        $props = @{
+            'Category'='Interfaces'
+            'Description'='Sticky port port-security'
+            'State'='Notice'
+            'Value'='802.1X globally enable'
+            'Comment'="802.1X port security is enabled.  Manual review of each interface for 'authentication port-control auto' may be necessary to determine compliance."
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     } else {
         $props = @{
             'Category'='Interfaces'
