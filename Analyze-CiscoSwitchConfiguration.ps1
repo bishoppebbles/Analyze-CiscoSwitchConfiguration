@@ -38,11 +38,11 @@
 
     The Decrypt-Type7 function decodes Cisco's type 7 weak "encryption" and displays the plaintext password. It was ported by John Savu (with some code cleanup) from theevilbit's python script (https://github.com/theevilbit/ciscot7) which was released under the MIT license.
     
-    Version 1.0.30
+    Version 1.0.31
     Sam Pursglove
     James Swineford
     John Savu (Decrypt-Type7 function)
-    Last modified: 03 October 2025
+    Last modified: 10 October 2025
 #>
 
 [CmdletBinding(DefaultParameterSetName='FailOnly')]
@@ -1105,7 +1105,7 @@ Process {
         ntpServer=              Search-ConfigForValue "^ntp server (\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3})"   $Config.noInterfaces
         ntpServerKey=           Search-ConfigForValue "^ntp server \S+ key (\S+)"                       $Config.noInterfaces
         ntpAuthenticationKey=   Search-ConfigForValue "^ntp authentication-key (\S+)"                   $Config.noInterfaces
-        ntpTrustedKey=          Search-ConfigForValue "^ntp trusted-key (\S+)"                          $Config.noInterfaces
+        ntpTrustedKey=          Search-ConfigForValue "^ntp trusted-key( \S+)*"                         $Config.noInterfaces
         ntpAuthenticate=        Search-ConfigQuietly  "^ntp authenticate$"                              $Config.noInterfaces
         ntpLogging=             Search-ConfigQuietly  "^ntp logging$"                                   $Config.noInterfaces
         syslogServer=           Search-ConfigForValue "logging h?o?s?t? ?(\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3})" $Config.noInterfaces
@@ -1642,19 +1642,38 @@ Process {
 
     #region NTP tests
 
-    # check if at least one NTP server is configured for authentication
+    # basic check if any NTP servers are configured for authentication
+    # this method will only find, at most, one authentication key due to the Cisco 'ntp trusted-key <key-id> [key-id2 ...]' 
+    # command's syntax of listing one or more keys.  The code to extract this does not parse more than one key in this case.
+    # the multiple loops are used to avoid any runtime errors that may arise if there are multiple authentication keys linked
+    # to multiple servers.
     if ($CiscoConfig.ntpAuthenticate) {
-        $authKey   = [int]$CiscoConfig.ntpAuthenticationKey
-        $trustKey  = [int]$CiscoConfig.ntpTrustedKey
-        $serverKey = [int]$CiscoConfig.ntpServerKey
+        $configuredKey = $false
 
-        if ($authKey -eq $trustKey -and $authKey -eq $serverKey) {
+        # test each authentication key
+        foreach($authKey in $CiscoConfig.ntpAuthenticationKey) {
+            
+            # test each trusted key
+            foreach($trustedKey in $CiscoConfig.ntpTrustedKey) {
+                if ([int]$authKey -eq [int]$trustedKey) {
+                    
+                    # test each server key
+                    foreach($serverKey in $CiscoConfig.ntpServerKey) {
+                        if ([int]$authKey -eq [int]$serverKey) {
+                            $configuredKey = $true
+                        }
+                    }
+                }
+            }
+        }
+
+        if ($configuredKey) {
             $props = @{
                 'Category'='NTP'
                 'Description'='NTP authentication'
                 'State'='Pass'
                 'Value'='Enabled'
-                'Comment'='NTP authentication is configured with at least one server.'
+                'Comment'="NTP authentication is configured for at least one server."
             }
             $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
         } else {
@@ -1662,8 +1681,8 @@ Process {
                 'Category'='NTP'
                 'Description'='NTP authentication'
                 'State'='Failed'
-                'Value'='NTP authentication is not properly configured'
-                'Comment'='NTP is not properly configured with at least one authentication key.'
+                'Value'='NTP authentication is not configured'
+                'Comment'='NTP is not configured with any authentication keys.'
             }
             $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null 
         }
