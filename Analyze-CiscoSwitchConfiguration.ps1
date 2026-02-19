@@ -38,11 +38,11 @@
 
     The Decrypt-Type7 function decodes Cisco's type 7 weak "encryption" and displays the plaintext password. It was ported by John Savu (with some code cleanup) from theevilbit's python script (https://github.com/theevilbit/ciscot7) which was released under the MIT license.
     
-    Version 1.0.31
+    Version 1.0.32
     Sam Pursglove
     James Swineford
     John Savu (Decrypt-Type7 function)
-    Last modified: 10 October 2025
+    Last modified: 19 February 2026
 #>
 
 [CmdletBinding(DefaultParameterSetName='FailOnly')]
@@ -1680,7 +1680,7 @@ Process {
             $props = @{
                 'Category'='NTP'
                 'Description'='NTP authentication'
-                'State'='Failed'
+                'State'='Fail'
                 'Value'='NTP authentication is not configured'
                 'Comment'='NTP is not configured with any authentication keys.'
             }
