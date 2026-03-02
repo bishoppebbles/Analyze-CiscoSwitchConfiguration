@@ -38,11 +38,11 @@
 
     The Decrypt-Type7 function decodes Cisco's type 7 weak "encryption" and displays the plaintext password. It was ported by John Savu (with some code cleanup) from theevilbit's python script (https://github.com/theevilbit/ciscot7) which was released under the MIT license.
     
-    Version 1.0.32
+    Version 1.0.33
     Sam Pursglove
     James Swineford
     John Savu (Decrypt-Type7 function)
-    Last modified: 19 February 2026
+    Last modified: 03 March 2026
 #>
 
 [CmdletBinding(DefaultParameterSetName='FailOnly')]
@@ -498,7 +498,7 @@ Begin {
                 $CountShutInterfaces++
 
                 #  all disabled ports shall be placed in a dedicated “UNUSED” VLAN that is also not VLAN1
-                if ($_.AccessVlan -eq $null -or $_.AccessVlan -eq 1) { 
+                if (($_.AccessVlan -eq $null -or $_.AccessVlan -eq 1) -and $_.Mode -ne 'trunk') { 
                         
                     $ShutdownPortVlan1 += "$($_.InterfaceType)$($_.InterfaceNumber)"
                 }
@@ -2210,14 +2210,25 @@ Process {
 
     # check if remote access authentication uses AAA or the local user database
     if ($CiscoConfig.aaaNewModel) {
-        $props = @{
-            'Category'='VTY 0-4'
-            'Description'='Login method'
-            'State'='Notice'
-            'Value'='AAA enabled'
-            'Comment'="Local database authentication is applied to the VTY lines by default.  The 'password', 'login', and 'login local' commands are ignored/disabled.  If present, review the 'aaa authentication' command(s) for modified authentication sources."
+        if ($Vty0_4Data.Password) {
+            $props = @{
+                'Category'='VTY 0-4'
+                'Description'='Login method'
+                'State'='Warning'
+                'Value'='AAA enabled and Password Set'
+                'Comment'="Local database authentication is applied to the VTY lines by default.  The 'password' command is set and is disabled but may still leak password information.  Remove this command.  If present, review the 'aaa authentication' command(s) for modified authentication sources."
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        } else {
+            $props = @{
+                'Category'='VTY 0-4'
+                'Description'='Login method'
+                'State'='Notice'
+                'Value'='AAA enabled'
+                'Comment'="Local database authentication is applied to the VTY lines by default.  The 'password', 'login', and 'login local' commands are ignored/disabled.  If present, review the 'aaa authentication' command(s) for modified authentication sources."
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
         }
-        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     } elseif ($Vty0_4Data.LoginLocal) {
         if ($Vty0_4Data.Password) {
             $props = @{
@@ -2472,14 +2483,25 @@ Process {
 
     # check if remote access authentication uses AAA or the local user database
     if ($CiscoConfig.aaaNewModel) {
-        $props = @{
-            'Category'='VTY 5-15'
-            'Description'='Login method'
-            'State'='Notice'
-            'Value'='AAA enabled'
-            'Comment'="Local database authentication is applied to the VTY lines by default.  The 'password', 'login', and 'login local' commands are ignored/disabled.  If present, review the 'aaa authentication' command(s) for modified authentication sources."
+        if ($Vty5_15Data.Password) {
+            $props = @{
+                'Category'='VTY 5-15'
+                'Description'='Login method'
+                'State'='Warning'
+                'Value'='AAA enabled and Password Set'
+                'Comment'="Local database authentication is applied to the VTY lines by default.  The 'password' command is set and is disabled but may still leak password information.  Remove this command.  If present, review the 'aaa authentication' command(s) for modified authentication sources."
             }
-        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        } else {
+            $props = @{
+                'Category'='VTY 5-15'
+                'Description'='Login method'
+                'State'='Notice'
+                'Value'='AAA enabled'
+                'Comment'="Local database authentication is applied to the VTY lines by default.  The 'password', 'login', and 'login local' commands are ignored/disabled.  If present, review the 'aaa authentication' command(s) for modified authentication sources."
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        }
     } elseif ($Vty5_15Data.LoginLocal) {
         if ($Vty5_15Data.Password) {
             $props = @{
@@ -2736,14 +2758,25 @@ Process {
 
         # check if remote access authentication uses AAA or the local user database
         if ($CiscoConfig.aaaNewModel) {
-            $props = @{
-                'Category'='VTY 16-31'
-                'Description'='Login method'
-                'State'='Notice'
-                'Value'='AAA enabled'
-                'Comment'="Local database authentication is applied to the VTY lines by default.  The 'password', 'login', and 'login local' commands are ignored/disabled.  If present, review the 'aaa authentication' command(s) for modified authentication sources."
+            if ($Vty16_31Data.Password) {
+                $props = @{
+                    'Category'='VTY 16-31'
+                    'Description'='Login method'
+                    'State'='Warning'
+                    'Value'='AAA enabled and Password Set'
+                    'Comment'="Local database authentication is applied to the VTY lines by default.  The 'password' command is set and is disabled but may still leak password information.  Remove this command.  If present, review the 'aaa authentication' command(s) for modified authentication sources."
                 }
-            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+                $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+            } else {
+                $props = @{
+                    'Category'='VTY 16-31'
+                    'Description'='Login method'
+                    'State'='Notice'
+                    'Value'='AAA enabled'
+                    'Comment'="Local database authentication is applied to the VTY lines by default.  The 'password', 'login', and 'login local' commands are ignored/disabled.  If present, review the 'aaa authentication' command(s) for modified authentication sources."
+                }
+                $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+            }
         } elseif ($Vty16_31Data.LoginLocal) {
             if ($Vty16_31Data.Password) {
                 $props = @{
