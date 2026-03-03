@@ -38,7 +38,7 @@
 
     The Decrypt-Type7 function decodes Cisco's type 7 weak "encryption" and displays the plaintext password. It was ported by John Savu (with some code cleanup) from theevilbit's python script (https://github.com/theevilbit/ciscot7) which was released under the MIT license.
     
-    Version 1.0.33
+    Version 1.0.34
     Sam Pursglove
     James Swineford
     John Savu (Decrypt-Type7 function)
@@ -2099,8 +2099,8 @@ Process {
         $props = @{
             'Category'='Console'
             'Description'='Transport output'
-            'State'='Warning'
-            'Value'='Default'
+            'State'='Fail'
+            'Value'='Not configured (default: Telnet)'
             'Comment'='Transport output is not configured; it should be configured for none or SSH use only.'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
@@ -2116,22 +2116,22 @@ Process {
     }
 
     # check the transport preferred setting
-    if (!$ConsoleData.TransportPref -and !$ConsoleData.TransportOut) {
+    if (!$ConsoleData.TransportPref) {
         $props = @{
             'Category'='Console'
             'Description'='Transport preferred'
-            'State'='Warning'
-            'Value'='Default (telnet)'
-            'Comment'="The transport preferred setting controls which protocol is used if it is not explicitly set. To avoid inadvertant telnet connections set the transport to 'none', 'ssh', or explicity set the transport output."
+            'State'='Fail'
+            'Value'='Not configured (default: Telnet)'
+            'Comment'="The transport preferred setting is not set.  It controls which protocol is used if no explicit transport output is set. To avoid inadvertant telnet connections set transport preferred to none or SSH."
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     } elseif ($ConsoleData.TransportPref -like "telnet") {
         $props = @{
             'Category'='Console'
             'Description'='Transport preferred'
-            'State'='Warning'
+            'State'='Fail'
             'Value'='Telnet'
-            'Comment'="The transport preferred setting controls which protocol is used if it is not explicitly set. Set this to 'none', 'ssh', or explicity set the transport output."
+            'Comment'="The transport preferred setting controls which protocol is used if transport output is not explicitly set. Set this to none or SSH."
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     } elseif ($ConsoleData.TransportPref -like "none") {
@@ -2140,10 +2140,10 @@ Process {
             'Description'='Transport preferred'
             'State'='Pass'
             'Value'='None'
-            'Comment'=''
+            'Comment'="The none option disables the default behavior of trying to Telnet to an invalid host, but it does not stop explicitly allowed protocols."
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
-    } elseif ($ConsoleData.TransportPref) {
+    } elseif ($ConsoleData.TransportPref -like "ssh") {
         $props = @{
             'Category'='Console'
             'Description'='Transport preferred'
@@ -2152,7 +2152,17 @@ Process {
             'Comment'=''
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+    } else {
+        $props = @{
+            'Category'='Console'
+            'Description'='Transport preferred'
+            'State'='Warning'
+            'Value'='Unknown'
+            'Comment'="The transport preferred setting is set to an uncommon protocol.  Unless justified otherwise it should be set to none or SSH."
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     }
+
     #endregion console analysis
 
 
@@ -2374,8 +2384,8 @@ Process {
         $props = @{
             'Category'='VTY 0-4'
             'Description'='Transport output'
-            'State'='Warning'
-            'Value'='Not configured'
+            'State'='Fail'
+            'Value'='Not configured (default: Telnet)'
             'Comment'='Transport output is not configured; it should be configured for none or SSH use only.'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
@@ -2391,22 +2401,22 @@ Process {
     }
 
     # check the transport preferred setting
-    if (!$Vty0_4Data.TransportPref -and !$Vty0_4Data.TransportIn) {
+    if (!$Vty0_4Data.TransportPref) {
         $props = @{
             'Category'='VTY 0-4'
             'Description'='Transport preferred'
-            'State'='Warning'
-            'Value'='Default (telnet)'
-            'Comment'="The transport preferred setting controls which protocol is used if it is not explicitly set. To avoid inadvertant telnet connections set the transport to 'none', 'ssh', or explicity set the transport output."
+            'State'='Fail'
+            'Value'='Not configured (default: Telnet)'
+            'Comment'="The transport preferred setting is not set.  It controls which protocol is used if no explicit transport output is set. To avoid inadvertant telnet connections set transport preferred to none or SSH."
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     } elseif ($Vty0_4Data.TransportPref -like "telnet") {
         $props = @{
             'Category'='VTY 0-4'
             'Description'='Transport preferred'
-            'State'='Warning'
+            'State'='Fail'
             'Value'='Telnet'
-            'Comment'="The transport preferred setting controls which protocol is used if it is not explicitly set. Set this to 'none', 'ssh', or explicity set the transport output."
+            'Comment'="The transport preferred setting controls which protocol is used if transport output is not explicitly set. Set this to none or SSH."
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     } elseif ($Vty0_4Data.TransportPref -like "none") {
@@ -2415,16 +2425,25 @@ Process {
             'Description'='Transport preferred'
             'State'='Pass'
             'Value'='None'
-            'Comment'=''
+            'Comment'="The none option disables the default behavior of trying to Telnet to an invalid host, but it does not stop explicitly allowed protocols."
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
-    } elseif ($Vty0_4Data.TransportPref) {
+    } elseif ($Vty0_4Data.TransportPref -like "ssh") {
         $props = @{
             'Category'='VTY 0-4'
             'Description'='Transport preferred'
             'State'='Pass'
             'Value'='SSH'
             'Comment'=''
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+    } else {
+        $props = @{
+            'Category'='VTY 0-4'
+            'Description'='Transport preferred'
+            'State'='Warning'
+            'Value'='Unknown'
+            'Comment'="The transport preferred setting is set to an uncommon protocol.  Unless justified otherwise it should be set to none or SSH."
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     }
@@ -2647,8 +2666,8 @@ Process {
         $props = @{
             'Category'='VTY 5-15'
             'Description'='Transport output'
-            'State'='Warning'
-            'Value'='Not configured'
+            'State'='Fail'
+            'Value'='Not configured (default: Telnet)'
             'Comment'='Transport output is not configured; it should be configured for none or SSH use only.'
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
@@ -2664,22 +2683,22 @@ Process {
     }
 
     # check the transport preferred setting
-    if (!$Vty5_15Data.TransportPref -and !$Vty5_15Data.TransportIn) {
+    if (!$Vty5_15Data.TransportPref) {
         $props = @{
             'Category'='VTY 5-15'
             'Description'='Transport preferred'
-            'State'='Warning'
-            'Value'='Default (telnet)'
-            'Comment'="The transport preferred setting controls which protocol is used if it is not explicitly set. To avoid inadvertant telnet connections set the transport to 'none', 'ssh', or explicity set the transport output."
+            'State'='Fail'
+            'Value'='Not configured (default: Telnet)'
+            'Comment'="The transport preferred setting is not set.  It controls which protocol is used if no explicit transport output is set. To avoid inadvertant telnet connections set transport preferred to none or SSH."
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     } elseif ($Vty5_15Data.TransportPref -like "telnet") {
         $props = @{
             'Category'='VTY 5-15'
             'Description'='Transport preferred'
-            'State'='Warning'
+            'State'='Fail'
             'Value'='Telnet'
-            'Comment'="The transport preferred setting controls which protocol is used if it is not explicitly set. Set this to 'none', 'ssh', or explicity set the transport output."
+            'Comment'="The transport preferred setting controls which protocol is used if transport output is not explicitly set. Set this to none or SSH."
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     } elseif ($Vty5_15Data.TransportPref -like "none") {
@@ -2688,16 +2707,25 @@ Process {
             'Description'='Transport preferred'
             'State'='Pass'
             'Value'='None'
-            'Comment'=''
+            'Comment'="The none option disables the default behavior of trying to Telnet to an invalid host, but it does not stop explicitly allowed protocols."
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
-    } elseif ($Vty5_15Data.TransportPref) {
+    } elseif ($Vty5_15Data.TransportPref -like "ssh") {
         $props = @{
             'Category'='VTY 5-15'
             'Description'='Transport preferred'
             'State'='Pass'
             'Value'='SSH'
             'Comment'=''
+        }
+        $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+    } else {
+        $props = @{
+            'Category'='VTY 5-15'
+            'Description'='Transport preferred'
+            'State'='Warning'
+            'Value'='Unknown'
+            'Comment'="The transport preferred setting is set to an uncommon protocol.  Unless justified otherwise it should be set to none or SSH."
         }
         $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
     }
@@ -2893,7 +2921,7 @@ Process {
                 'Category'='VTY 16-31'
                 'Description'='Transport input'
                 'State'='Fail'
-                'Value'='Not configured'
+                'Value'='Not configured (default: telnet)'
                 'Comment'=''
             }
             $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
@@ -2922,8 +2950,8 @@ Process {
             $props = @{
                 'Category'='VTY 16-31'
                 'Description'='Transport output'
-                'State'='Warning'
-                'Value'='Not configured'
+                'State'='Fail'
+                'Value'='Not configured (default: Telnet)'
                 'Comment'='Transport output is not configured; it should be configured for none or SSH use only.'
             }
             $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
@@ -2939,22 +2967,22 @@ Process {
         }
 
         # check the transport preferred setting
-        if (!$Vty16_31Data.TransportPref -and !$Vty16_31Data.TransportIn) {
+        if (!$Vty16_31Data.TransportPref) {
             $props = @{
                 'Category'='VTY 16-31'
                 'Description'='Transport preferred'
-                'State'='Warning'
-                'Value'='Default (telnet)'
-                'Comment'="The transport preferred setting controls which protocol is used if it is not explicitly set. To avoid inadvertant telnet connections set the transport to 'none', 'ssh', or explicity set the transport output."
+                'State'='Fail'
+                'Value'='Not configured (default: Telnet)'
+                'Comment'="The transport preferred setting is not set.  It controls which protocol is used if no explicit transport output is set. To avoid inadvertant telnet connections set transport preferred to none or SSH."
             }
             $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
         } elseif ($Vty16_31Data.TransportPref -like "telnet") {
             $props = @{
                 'Category'='VTY 16-31'
                 'Description'='Transport preferred'
-                'State'='Warning'
+                'State'='Fail'
                 'Value'='Telnet'
-                'Comment'="The transport preferred setting controls which protocol is used if it is not explicitly set. Set this to 'none', 'ssh', or explicity set the transport output."
+                'Comment'="The transport preferred setting controls which protocol is used if transport output is not explicitly set. Set this to none or SSH."
             }
             $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
         } elseif ($Vty16_31Data.TransportPref -like "none") {
@@ -2963,16 +2991,25 @@ Process {
                 'Description'='Transport preferred'
                 'State'='Pass'
                 'Value'='None'
-                'Comment'=''
+                'Comment'="The none option disables the default behavior of trying to Telnet to an invalid host, but it does not stop explicitly allowed protocols."
             }
             $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
-        } elseif ($Vty16_31Data.TransportPref) {
+        } elseif ($Vty16_31Data.TransportPref -like "ssh") {
             $props = @{
                 'Category'='VTY 16-31'
                 'Description'='Transport preferred'
                 'State'='Pass'
                 'Value'='SSH'
                 'Comment'=''
+            }
+            $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
+        } else {
+            $props = @{
+                'Category'='VTY 16-31'
+                'Description'='Transport preferred'
+                'State'='Warning'
+                'Value'='Unknown'
+                'Comment'="The transport preferred setting is set to an uncommon protocol.  Unless justified otherwise it should be set to none or SSH."
             }
             $Results.Add((New-Object -TypeName PSObject -Property $props)) | Out-Null
         }
