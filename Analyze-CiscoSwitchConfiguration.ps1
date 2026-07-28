@@ -38,11 +38,12 @@
 
     The Decrypt-Type7 function decodes Cisco's type 7 weak "encryption" and displays the plaintext password. It was ported by John Savu (with some code cleanup) from theevilbit's python script (https://github.com/theevilbit/ciscot7) which was released under the MIT license.
     
-    Version 1.0.34
+    Version 1.0.35
     Sam Pursglove
     James Swineford
-    John Savu (Decrypt-Type7 function)
-    Last modified: 03 March 2026
+    John Savu - Decrypt-Type7 function
+    Claude (Anthropic) - Excel COM object copy/paste replacement functions
+    Last modified: 28 July 2026
 #>
 
 [CmdletBinding(DefaultParameterSetName='FailOnly')]
@@ -815,6 +816,146 @@ Begin {
         }
     }
 
+    #region Excel writer (clipboard-free)
+    # Writes tab/newline-delimited text directly into a Range via .Value2,
+    # instead of Set-Clipboard + Paste(), avoiding COM/clipboard reliability
+    # issues and the extra overhead of round-tripping through the clipboard.
+    # Quotes a field per CSV/TSV rules (wraps in double quotes, doubling any
+    # internal quotes) if it contains a tab, newline, or quote character, so
+    # values with embedded newlines (e.g. multiple interfaces/ACL entries
+    # listed in one cell) stay a single cell instead of splitting into rows.
+    function ConvertTo-TsvField {
+        param($Value)
+        
+        if ($null -eq $Value) {
+            return '' 
+        }
+        
+        $text = [string]$Value
+        
+        if ($text -match "[`t`r`n`"]") {
+            return '"' + ($text -replace '"', '""') + '"'
+        }
+        
+        return $text
+    }
+
+
+    # Parses CSV/TSV-quoted text (see ConvertTo-TsvField) into a 2D object
+    # array for assignment to a Range's .Value2 property. A quoted field may
+    # contain embedded tabs/newlines/quotes ("" = literal quote), kept as
+    # part of that cell rather than treated as delimiters.
+    function ConvertTo-ExcelArray {
+        param([string]$Text)
+
+        $rows = New-Object System.Collections.Generic.List[object]
+        $currentRow = New-Object System.Collections.Generic.List[string]
+        $field = New-Object System.Text.StringBuilder
+        $inQuotes = $false
+        $sawAnyContent = $false
+        $i = 0
+        $len = $Text.Length
+
+        while ($i -lt $len) {
+            $ch = $Text[$i]
+
+            if ($inQuotes) {
+                if ($ch -eq '"') {
+                    if (($i + 1) -lt $len -and $Text[$i + 1] -eq '"') {
+                        [void]$field.Append('"')
+                        $i += 2
+                    } else {
+                        $inQuotes = $false
+                        $i++
+                    }
+                } else {
+                    [void]$field.Append($ch)
+                    $i++
+                }
+                continue
+            }
+
+            if ($ch -eq '"' -and $field.Length -eq 0) {
+                $inQuotes = $true
+                $sawAnyContent = $true
+                $i++
+
+            } elseif ($ch -eq "`t") {
+                $currentRow.Add($field.ToString())
+                [void]$field.Clear()
+                $sawAnyContent = $true
+                $i++
+
+            } elseif ($ch -eq "`r") {
+                $i++ # ignore; paired `n (if any) handles the row break
+
+            } elseif ($ch -eq "`n") {
+                $currentRow.Add($field.ToString())
+                [void]$field.Clear()
+                $rows.Add([string[]]$currentRow.ToArray())
+                $currentRow = New-Object System.Collections.Generic.List[string]
+                $sawAnyContent = $true
+                $i++
+
+            } else {
+                [void]$field.Append($ch)
+                $sawAnyContent = $true
+                $i++
+            }
+        }
+
+        # flush a trailing field/row if the text didn't end with a newline
+        if ($field.Length -gt 0 -or $currentRow.Count -gt 0) {
+            $currentRow.Add($field.ToString())
+            $rows.Add([string[]]$currentRow.ToArray())
+        }
+
+        if (-not $sawAnyContent -or $rows.Count -eq 0) {
+            $rows.Add([string[]]@(''))
+        }
+
+        $maxCols = 1
+        foreach ($row in $rows) {
+            if ($row.Length -gt $maxCols) { $maxCols = $row.Length }
+        }
+
+        $rowCount = $rows.Count
+        $arr = New-Object 'object[,]' $rowCount, $maxCols
+
+        for ($r = 0; $r -lt $rowCount; $r++) {
+            $row = $rows[$r]
+            for ($c = 0; $c -lt $maxCols; $c++) {
+                $arr[$r, $c] = if ($c -lt $row.Length) { $row[$c] } else { '' }
+            }
+        }
+
+        # Unary comma prevents PowerShell from flattening the 2D array as it
+        # returns through the pipeline.
+        return ,$arr
+    }
+
+
+    # Writes tab/newline-delimited $Text into $Sheet starting at ($StartRow, $StartCol),
+    # without touching the clipboard.
+    function Set-ExcelRangeFromText {
+        param(
+            $Sheet,
+            [int]$StartRow,
+            [int]$StartCol,
+            [string]$Text
+        )
+
+        $arr = ConvertTo-ExcelArray -Text $Text
+        $rowCount = $arr.GetLength(0)
+        $colCount = $arr.GetLength(1)
+
+        $startCell = $Sheet.Cells.Item($StartRow, $StartCol)
+        $endCell   = $Sheet.Cells.Item($StartRow + $rowCount - 1, $StartCol + $colCount - 1)
+        $Sheet.Range($startCell, $endCell).Value2 = $arr
+    }
+    #endregion
+
+
     function Output-Excel {
         param(
             [string]$switch,
@@ -867,33 +1008,34 @@ Begin {
         $objSheetResults.Range('$A:$E').FormatConditions.Item(3).Font.Color = 6375440
         $objSheetResults.Range('$A:$E').FormatConditions.Item(3).Interior.Color = 16764006
         
-        # populate the general info sheet
-        $output = "$switch`n"
-        $output += "Physical ports`t$($SwitchInfo['Physical Ports'])`n"
-        $output += "Shutdown ports`t$($SwitchInfo['Shutdown ports'])`n"
-        $output += "Access ports`t$($SwitchInfo['Access ports'])`n"
+        # populate the general info sheet (TSV-quoted so embedded tabs/newlines
+        # in switch name, VLAN keys, or ACL entries stay within one cell)
+        $output = "$(ConvertTo-TsvField $switch)`n"
+        $output += "Physical ports`t$(ConvertTo-TsvField $SwitchInfo['Physical Ports'])`n"
+        $output += "Shutdown ports`t$(ConvertTo-TsvField $SwitchInfo['Shutdown ports'])`n"
+        $output += "Access ports`t$(ConvertTo-TsvField $SwitchInfo['Access ports'])`n"
         
         if ($SwitchInfo['Access VLANs'] -ne $null) {
             
             foreach ($key in $SwitchInfo['Access VLANs'].GetEnumerator()) {
-                $output += "Access VLAN $($key.name)`t$($key.value) active interfaces`n"
+                $output += "Access VLAN $(ConvertTo-TsvField $key.name)`t$($key.value) active interfaces`n"
             }
         }
         
-        $output += "PortFast ports`t$($SwitchInfo['PortFast ports'])`n"
-        $output += "Trunk ports`t$($SwitchInfo['Trunk ports'])`n"
+        $output += "PortFast ports`t$(ConvertTo-TsvField $SwitchInfo['PortFast ports'])`n"
+        $output += "Trunk ports`t$(ConvertTo-TsvField $SwitchInfo['Trunk ports'])`n"
          
         if ($SwitchInfo['Native Trunks'] -ne $null) {
             
             foreach ($key in $SwitchInfo['Native Trunks'].GetEnumerator()) {
-                $output += "Trunk native VLAN $($key.name)`t$($key.value) active interfaces`n"
+                $output += "Trunk native VLAN $(ConvertTo-TsvField $key.name)`t$($key.value) active interfaces`n"
             }
         }
                
         if ($SwitchInfo['Encapsulation'] -ne $null) {
             
             foreach ($key in $SwitchInfo['Encapsulation'].GetEnumerator()) {
-                $output += "$($key.name) encapsulation`t$($key.value) active interfaces`n"
+                $output += "$(ConvertTo-TsvField $key.name) encapsulation`t$($key.value) active interfaces`n"
             }
         }
 
@@ -901,7 +1043,7 @@ Begin {
             $output += "ACLs:`n"
             
             foreach ($acl in $SwitchInfo['ACLs']) {
-                $output += "`t$acl`n"
+                $output += "`t$(ConvertTo-TsvField $acl)`n"
             }
         }
         
@@ -911,10 +1053,8 @@ Begin {
             $lastRow = $lastRow + 2
         }
         
-        $output | Set-Clipboard
-        $script:objSheetInfo.Activate()
-        $script:objSheetInfo.Cells.Item($lastRow,1).Select() | Out-Null #paste to last used row
-        $script:objSheetInfo.Paste()
+        # write directly via .Value2 rather than clipboard paste (see Set-ExcelRangeFromText)
+        Set-ExcelRangeFromText -Sheet $script:objSheetInfo -StartRow $lastRow -StartCol 1 -Text $output
         $script:objSheetInfo.Rows.Item($lastRow).Font.Bold = $true #bold switch name
 
         if ($FailOnly) {
@@ -927,14 +1067,21 @@ Begin {
 
         $output = "Category`tDescription`tState`tValue`tComment`n"
         
+        # TSV-quote every field - Value/Comment can contain embedded newlines
+        # (e.g. multiple interfaces/ACL entries listed in one cell)
         foreach ($item in $SwitchResults) {
-            $output += "$($item.Category)`t$($item.Description)`t$($item.State)`t`"$($item.Value)`"`t$($item.Comment)`n"
+            $category    = ConvertTo-TsvField $item.Category
+            $description = ConvertTo-TsvField $item.Description
+            $state       = ConvertTo-TsvField $item.State
+            $value       = ConvertTo-TsvField $item.Value
+            $comment     = ConvertTo-TsvField $item.Comment
+            $output += "$category`t$description`t$state`t$value`t$comment`n"
         }
         
-        $output | Set-Clipboard
+        # write directly via .Value2 rather than clipboard paste; sheet must stay
+        # active for the .Select() reset call further down
         $objSheetResults.Activate()
-        $objSheetResults.Cells.Item(1,1).Select() | Out-Null
-        $objSheetResults.Paste()
+        Set-ExcelRangeFromText -Sheet $objSheetResults -StartRow 1 -StartCol 1 -Text $output
         $objSheetResults.Columns.Item(4).NumberFormat = "@"
         $objSheetResults.Columns.Item(4).WrapText = $true
         $objSheetResults.Columns.Item(5).NumberFormat = "@"
@@ -947,6 +1094,7 @@ Begin {
         $script:objSheetInfo.Cells.Item(1,1).Select() | Out-Null #reset selection
         
     }
+
 
     function Prep-Excel {
 
@@ -968,7 +1116,7 @@ Begin {
 
     # Decodes Cisco's type 7 weak "encryption" and displays the plaintext password
     # Ported by John Savu (April 2024) from theevilbit's python script
-     function Decrypt-Type7 {
+    function Decrypt-Type7 {
         param(
             [string[]]$type7
         )
